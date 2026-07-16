@@ -1,84 +1,30 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react'
+import { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
+import { cartStore } from '../lib/cartStore.js'
+import { subtotalOf, totalItemsOf } from '../lib/pricing.js'
 
 const CartContext = createContext(null)
 
-const STORAGE_KEY = 'contoso.cart.items'
-
 export function CartProvider({ children }) {
-  // Cart is an array of { product, quantity }.
-  const [items, setItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
+  // Subscribe to the external cart store. This keeps React in sync with the
+  // same store the WebMCP tools mutate, so agent-driven changes re-render the UI.
+  const items = useSyncExternalStore(cartStore.subscribe, cartStore.getItems)
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-  }, [items])
-
-  function addToCart(product, quantity = 1) {
-    setItems((prev) => {
-      const existing = prev.find((i) => i.product.id === product.id)
-      if (existing) {
-        return prev.map((i) =>
-          i.product.id === product.id
-            ? { ...i, quantity: Math.min(i.quantity + quantity, product.stock) }
-            : i
-        )
-      }
-      return [...prev, { product, quantity: Math.min(quantity, product.stock) }]
-    })
-  }
-
-  function updateQuantity(productId, quantity) {
-    setItems((prev) =>
-      prev
-        .map((i) =>
-          i.product.id === productId
-            ? { ...i, quantity: Math.max(0, Math.min(quantity, i.product.stock)) }
-            : i
-        )
-        .filter((i) => i.quantity > 0)
-    )
-  }
-
-  function removeFromCart(productId) {
-    setItems((prev) => prev.filter((i) => i.product.id !== productId))
-  }
-
-  function clearCart() {
-    setItems([])
-  }
-
-  const { totalItems, subtotal } = useMemo(() => {
-    return items.reduce(
-      (acc, i) => {
-        acc.totalItems += i.quantity
-        acc.subtotal += i.quantity * i.product.price
-        return acc
-      },
-      { totalItems: 0, subtotal: 0 }
-    )
-  }, [items])
-
-  return (
-    <CartContext.Provider
-      value={{
-        items,
-        addToCart,
-        updateQuantity,
-        removeFromCart,
-        clearCart,
-        totalItems,
-        subtotal,
-      }}
-    >
-      {children}
-    </CartContext.Provider>
+  const { totalItems, subtotal } = useMemo(
+    () => ({ totalItems: totalItemsOf(items), subtotal: subtotalOf(items) }),
+    [items]
   )
+
+  const value = {
+    items,
+    addToCart: cartStore.addItem,
+    updateQuantity: cartStore.updateQuantity,
+    removeFromCart: cartStore.removeItem,
+    clearCart: cartStore.clear,
+    totalItems,
+    subtotal,
+  }
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
 
 export function useCart() {

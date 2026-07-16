@@ -5,6 +5,8 @@ import Login from './pages/Login.jsx'
 import CartPage from './pages/CartPage.jsx'
 import Checkout from './pages/Checkout.jsx'
 import OrderConfirmation from './pages/OrderConfirmation.jsx'
+import WebMCPProvider from './webmcp/WebMCPProvider.jsx'
+import AgentConsole from './webmcp/AgentConsole.jsx'
 import { useAuth } from './context/AuthContext.jsx'
 
 function ProtectedRoute({ children }) {
@@ -19,6 +21,7 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <div className="app">
+      <WebMCPProvider />
       <Navbar />
       <main className="main">
         <Routes>
@@ -54,6 +57,7 @@ export default function App() {
       <footer className="footer">
         <span>© {new Date().getFullYear()} Contoso Sports — demo application. No real orders are placed.</span>
       </footer>
+      <AgentConsole />
     </div>
   )
 }

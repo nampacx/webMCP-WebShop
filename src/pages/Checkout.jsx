@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-
-const SHIPPING_THRESHOLD = 75
-const SHIPPING_FEE = 6.99
-const TAX_RATE = 0.08
+import { computeTotals } from '../lib/pricing.js'
+import { buildOrder } from '../lib/orders.js'
 
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart()
@@ -31,9 +29,7 @@ export default function Checkout() {
     return <Navigate to="/" replace />
   }
 
-  const shipping = subtotal >= SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE
-  const tax = subtotal * TAX_RATE
-  const total = subtotal + shipping + tax
+  const { shipping, tax, total } = computeTotals(subtotal)
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -61,17 +57,8 @@ export default function Checkout() {
     setPlacing(true)
     // Simulate a network round-trip — no real backend.
     setTimeout(() => {
-      const order = {
-        orderId: 'CS-' + Math.random().toString(36).slice(2, 8).toUpperCase(),
-        items: items.map((i) => ({
-          name: i.product.name,
-          quantity: i.quantity,
-          price: i.product.price,
-        })),
-        subtotal,
-        shipping,
-        tax,
-        total,
+      const order = buildOrder({
+        items,
         shipTo: {
           name: form.fullName,
           address: form.address,
@@ -79,9 +66,8 @@ export default function Checkout() {
           zip: form.zip,
           country: form.country,
         },
-        cardLast4: form.cardNumber.replace(/\s/g, '').slice(-4),
-        placedAt: new Date().toISOString(),
-      }
+        cardNumber: form.cardNumber,
+      })
       clearCart()
       navigate('/order-confirmation', { replace: true, state: { order } })
     }, 900)

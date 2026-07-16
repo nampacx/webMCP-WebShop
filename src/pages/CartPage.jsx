@@ -1,17 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext.jsx'
-
-const SHIPPING_THRESHOLD = 75
-const SHIPPING_FEE = 6.99
-const TAX_RATE = 0.08
+import { SHIPPING_THRESHOLD, computeTotals } from '../lib/pricing.js'
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, subtotal } = useCart()
   const navigate = useNavigate()
 
-  const shipping = subtotal === 0 || subtotal >= SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE
-  const tax = subtotal * TAX_RATE
-  const total = subtotal + shipping + tax
+  const { shipping, tax, total } = computeTotals(subtotal)
 
   if (items.length === 0) {
     return (

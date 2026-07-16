@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore, useRef } from 'react'
 import { modelContext } from './runtime.js'
+import { auditLog } from '../lib/auditLog.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -17,6 +18,22 @@ export default function AgentConsole() {
     () => modelContext.listTools(),
     () => modelContext.listTools()
   )
+
+  const auditEntries = useSyncExternalStore(
+    (cb) => auditLog.subscribe(cb),
+    () => auditLog.getEntries(),
+    () => auditLog.getEntries()
+  )
+
+  function exportAudit() {
+    const blob = new Blob([auditLog.export()], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contoso-audit-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -122,6 +139,38 @@ export default function AgentConsole() {
               <span>{t.description}</span>
             </li>
           ))}
+        </ul>
+      </details>
+
+      <details className="agent-tools agent-audit">
+        <summary>Audit log ({auditEntries.length})</summary>
+        <div className="audit-actions">
+          <button className="btn btn-ghost" onClick={exportAudit} disabled={auditEntries.length === 0}>
+            Export JSON
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => auditLog.clear()}
+            disabled={auditEntries.length === 0}
+          >
+            Clear
+          </button>
+        </div>
+        <ul className="audit-list">
+          {auditEntries.length === 0 && <li className="audit-empty">No activity recorded yet.</li>}
+          {auditEntries
+            .slice(-30)
+            .reverse()
+            .map((e) => (
+              <li key={e.id} className={`audit-row audit-${e.status || e.type}`}>
+                <span className="audit-time">{new Date(e.ts).toLocaleTimeString()}</span>
+                <span className="audit-name">
+                  {e.type === 'checkout' ? `✔ checkout (${e.source})` : e.tool}
+                  {e.status === 'error' && <span className="audit-flag">error</span>}
+                </span>
+                <span className="audit-summary">{e.summary}</span>
+              </li>
+            ))}
         </ul>
       </details>
     </div>

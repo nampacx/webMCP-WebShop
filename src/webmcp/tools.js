@@ -11,6 +11,7 @@ import { cartStore } from '../lib/cartStore.js'
 import { authStore } from '../lib/authStore.js'
 import { subtotalOf, totalItemsOf, computeTotals } from '../lib/pricing.js'
 import { buildOrder } from '../lib/orders.js'
+import { logCheckout } from '../lib/auditLog.js'
 
 const round = (n) => Math.round(n * 100) / 100
 
@@ -254,6 +255,7 @@ export function createShopTools({ onCheckout } = {}) {
         })
 
         cartStore.clear()
+        logCheckout(order, { source: 'webmcp', user: user.email })
         if (typeof onCheckout === 'function') onCheckout(order)
 
         return ok(

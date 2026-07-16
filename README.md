@@ -62,6 +62,33 @@ await window.webmcp.callTool('shop_checkout', { address: '742 Evergreen Terrace'
 Or click the **🤖 Agent** button (bottom-right) and hit **Run demo agent** to watch a
 scripted agent search, add to cart, query the cart and check out using only these tools.
 
+### Audit logging
+
+Every WebMCP tool call is recorded to a persistent, client-side **audit log**
+(`src/lib/auditLog.js`), so tool usage can be reviewed later. Because the app has
+no backend, the log is a capped ring buffer (500 entries) kept in `localStorage`
+and survives reloads. Instrumentation lives in the runtime's `callTool`, so every
+call is captured regardless of caller.
+
+- **`tool_call`** entries record: timestamp, session id, tool name, redacted args,
+  `ok`/`error` status, duration (ms), and a result summary.
+- **`checkout`** entries additionally record each completed order: order id, user,
+  item count, total, and card last-4 — with `source: "webmcp"` (agent) or
+  `source: "ui"` (checkout form), so both paths are audited.
+- **Sensitive values are redacted** before storage: passwords/CVC become `••••`,
+  card numbers are reduced to `•••• 1234`.
+
+Inspect or export the trail:
+
+```js
+window.webmcp.getAuditLog()      // array of audit entries
+window.webmcp.exportAuditLog()   // pretty-printed JSON string
+window.webmcp.clearAuditLog()    // wipe the trail
+```
+
+The **🤖 Agent** panel also has an **Audit log** section with **Export JSON**
+(downloads the trail) and **Clear** buttons.
+
 ## Getting started
 
 ```bash
@@ -94,6 +121,7 @@ src/
   data/           products.js, users.js  (static dummy data)
   lib/            cartStore, authStore  (external state shared with WebMCP)
                   pricing, search, orders  (shared logic)
+                  auditLog        (persistent WebMCP tool-usage audit trail)
   pages/          Catalog, Login, CartPage, Checkout, OrderConfirmation
   webmcp/         runtime.js      (navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)

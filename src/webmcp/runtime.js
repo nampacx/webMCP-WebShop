@@ -7,6 +7,12 @@
 // Two surfaces are installed on `window`:
 //   * window.navigator.modelContext  — the proposed standard surface
 //   * window.webmcp                   — a small convenience wrapper (listTools/callTool)
+//
+// Every tool call is recorded to the audit log (see src/lib/auditLog.js).
+
+import { auditLog, redactArgs } from '../lib/auditLog.js'
+
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 class WebModelContext {
   #tools = new Map()
@@ -14,6 +20,9 @@ class WebModelContext {
   // Cached descriptor list. Regenerated only when the tool set changes so
   // useSyncExternalStore gets a stable reference between renders.
   #snapshot = []
+
+  // Groups all tool calls from a single page load together in the audit trail.
+  sessionId = Math.random().toString(36).slice(2, 10)
 
   constructor() {
     // Bind public methods so they keep working when destructured, e.g.
@@ -55,18 +64,43 @@ class WebModelContext {
 
   // Invoke a tool. Always resolves to an MCP-style result object; handled
   // errors come back as { content, isError: true } rather than throwing.
+  // Every invocation is recorded to the audit log.
   async callTool(name, args = {}) {
+    const started = now()
     const tool = this.#tools.get(name)
     if (!tool) {
-      return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+      const result = { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+      this.#audit(name, args, result, started)
+      return result
     }
     try {
-      return await tool.execute(args || {})
+      const result = await tool.execute(args || {})
+      this.#audit(name, args, result, started)
+      return result
     } catch (err) {
-      return {
+      const result = {
         content: [{ type: 'text', text: `Error in ${name}: ${err?.message || String(err)}` }],
         isError: true,
       }
+      this.#audit(name, args, result, started)
+      return result
+    }
+  }
+
+  // Record a single tool call to the audit log with redacted arguments.
+  #audit(name, args, result, started) {
+    try {
+      auditLog.log({
+        type: 'tool_call',
+        session: this.sessionId,
+        tool: name,
+        args: redactArgs(args),
+        status: result?.isError ? 'error' : 'ok',
+        durationMs: Math.round(now() - started),
+        summary: result?.content?.[0]?.text ?? '',
+      })
+    } catch {
+      /* auditing must never break a tool call */
     }
   }
 
@@ -108,5 +142,10 @@ if (typeof window !== 'undefined') {
     listTools: () => modelContext.listTools(),
     callTool: (name, args) => modelContext.callTool(name, args),
     subscribe: (l) => modelContext.subscribe(l),
+    // Audit trail accessors.
+    getAuditLog: () => auditLog.getEntries(),
+    exportAuditLog: () => auditLog.export(),
+    clearAuditLog: () => auditLog.clear(),
+    subscribeAudit: (l) => auditLog.subscribe(l),
   }
 }

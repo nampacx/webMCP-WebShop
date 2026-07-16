@@ -89,6 +89,21 @@ window.webmcp.clearAuditLog()    // wipe the trail
 The **🤖 Agent** panel also has an **Audit log** section with **Export JSON**
 (downloads the trail) and **Clear** buttons.
 
+#### Logging to a file (`audit-log.jsonl`)
+
+A browser page can't write to disk directly, so under **`npm run dev`** each new
+audit entry is also streamed to the dev server and appended to
+**`audit-log.jsonl`** in the repo root (one JSON object per line). This is handled
+by dev-server middleware (`auditLogFilePlugin` in `vite.config.js`) — it exists
+**only during development**, so the production build (`npm run build`) stays a
+pure static frontend with no backend. The file is git-ignored (it's runtime data).
+
+```
+$ cat audit-log.jsonl
+{"id":"…","ts":"…","type":"tool_call","tool":"shop_search_products","args":{…},"status":"ok",…}
+{"id":"…","ts":"…","type":"checkout","source":"webmcp","orderId":"CS-…","total":193.32,…}
+```
+
 ## Getting started
 
 ```bash

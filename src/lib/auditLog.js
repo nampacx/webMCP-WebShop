@@ -47,6 +47,9 @@ function load() {
 let entries = load()
 let seq = 0
 const listeners = new Set()
+// Fired only when a genuinely new entry is appended (not on reload/clear).
+// Used by the file sink so historical localStorage entries aren't re-shipped.
+const appendListeners = new Set()
 
 function emit() {
   try {
@@ -66,6 +69,12 @@ export const auditLog = {
     return () => listeners.delete(listener)
   },
 
+  // Notified with each newly appended entry (for the file sink).
+  onAppend(listener) {
+    appendListeners.add(listener)
+    return () => appendListeners.delete(listener)
+  },
+
   // Append an entry. Callers provide the domain fields; id/timestamp are added.
   log(entry) {
     const full = {
@@ -75,6 +84,13 @@ export const auditLog = {
     }
     entries = [...entries, full].slice(-MAX_ENTRIES)
     emit()
+    appendListeners.forEach((l) => {
+      try {
+        l(full)
+      } catch {
+        /* a sink failure must not break logging */
+      }
+    })
     return full
   },
 

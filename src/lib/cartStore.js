@@ -2,70 +2,53 @@
 // React subscribes via useSyncExternalStore; the WebMCP tools read/write it
 // directly, so an agent's sequential calls (add → view) always see fresh state.
 
+import { readJSON, writeJSON } from './safeStorage.js'
+import { createStore } from './createStore.js'
+
 const STORAGE_KEY = 'contoso.cart.items'
 
-function load() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? JSON.parse(saved) : []
-  } catch {
-    return []
-  }
-}
-
-let items = load()
-const listeners = new Set()
-
-function emit() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-  } catch {
-    /* ignore persistence errors */
-  }
-  listeners.forEach((l) => l())
-}
+const store = createStore({
+  load: () => readJSON(STORAGE_KEY, []),
+  persist: (items) => writeJSON(STORAGE_KEY, items),
+})
 
 export const cartStore = {
   // getSnapshot: returns a stable reference until the cart actually changes.
-  getItems: () => items,
-
-  subscribe(listener) {
-    listeners.add(listener)
-    return () => listeners.delete(listener)
-  },
+  getItems: store.getSnapshot,
+  getSnapshot: store.getSnapshot,
+  subscribe: store.subscribe,
 
   addItem(product, quantity = 1) {
-    const existing = items.find((i) => i.product.id === product.id)
-    if (existing) {
-      items = items.map((i) =>
-        i.product.id === product.id
-          ? { ...i, quantity: Math.min(i.quantity + quantity, product.stock) }
-          : i
-      )
-    } else {
-      items = [...items, { product, quantity: Math.min(quantity, product.stock) }]
-    }
-    emit()
+    store.set((items) => {
+      const existing = items.find((i) => i.product.id === product.id)
+      if (existing) {
+        return items.map((i) =>
+          i.product.id === product.id
+            ? { ...i, quantity: Math.min(i.quantity + quantity, product.stock) }
+            : i
+        )
+      }
+      return [...items, { product, quantity: Math.min(quantity, product.stock) }]
+    })
   },
 
   updateQuantity(productId, quantity) {
-    items = items
-      .map((i) =>
-        i.product.id === productId
-          ? { ...i, quantity: Math.max(0, Math.min(quantity, i.product.stock)) }
-          : i
-      )
-      .filter((i) => i.quantity > 0)
-    emit()
+    store.set((items) =>
+      items
+        .map((i) =>
+          i.product.id === productId
+            ? { ...i, quantity: Math.max(0, Math.min(quantity, i.product.stock)) }
+            : i
+        )
+        .filter((i) => i.quantity > 0)
+    )
   },
 
   removeItem(productId) {
-    items = items.filter((i) => i.product.id !== productId)
-    emit()
+    store.set((items) => items.filter((i) => i.product.id !== productId))
   },
 
   clear() {
-    items = []
-    emit()
+    store.set([])
   },
 }

@@ -6,6 +6,10 @@
 //
 // Sensitive values (passwords, card numbers, CVC) are redacted before storage.
 
+import { roundMoney, formatMoney } from './money.js'
+import { readJSON, writeJSON } from './safeStorage.js'
+import { createStore } from './createStore.js'
+
 const STORAGE_KEY = 'contoso.audit.log'
 const MAX_ENTRIES = 500
 
@@ -35,39 +39,21 @@ export function redactArgs(value) {
   return out
 }
 
-function load() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? JSON.parse(saved) : []
-  } catch {
-    return []
-  }
-}
+const store = createStore({
+  load: () => readJSON(STORAGE_KEY, []),
+  persist: (entries) => writeJSON(STORAGE_KEY, entries),
+})
 
-let entries = load()
 let seq = 0
-const listeners = new Set()
 // Fired only when a genuinely new entry is appended (not on reload/clear).
 // Used by the file sink so historical localStorage entries aren't re-shipped.
 const appendListeners = new Set()
 
-function emit() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
-  } catch {
-    /* ignore persistence errors (e.g. quota) */
-  }
-  listeners.forEach((l) => l())
-}
-
 export const auditLog = {
   // getSnapshot: stable reference until the log changes.
-  getEntries: () => entries,
-
-  subscribe(listener) {
-    listeners.add(listener)
-    return () => listeners.delete(listener)
-  },
+  getEntries: store.getSnapshot,
+  getSnapshot: store.getSnapshot,
+  subscribe: store.subscribe,
 
   // Notified with each newly appended entry (for the file sink).
   onAppend(listener) {
@@ -82,8 +68,7 @@ export const auditLog = {
       ts: new Date().toISOString(),
       ...entry,
     }
-    entries = [...entries, full].slice(-MAX_ENTRIES)
-    emit()
+    store.set((entries) => [...entries, full].slice(-MAX_ENTRIES))
     appendListeners.forEach((l) => {
       try {
         l(full)
@@ -95,12 +80,11 @@ export const auditLog = {
   },
 
   clear() {
-    entries = []
-    emit()
+    store.set([])
   },
 
   export() {
-    return JSON.stringify(entries, null, 2)
+    return JSON.stringify(store.getSnapshot(), null, 2)
   },
 }
 
@@ -108,7 +92,7 @@ export const auditLog = {
 // the only order history this backend-less demo has.
 export function getCheckoutsFor(email) {
   if (!email) return []
-  return entries.filter((e) => e.type === 'checkout' && e.user === email)
+  return store.getSnapshot().filter((e) => e.type === 'checkout' && e.user === email)
 }
 
 // Aggregate order facts for a user: how many orders and how much spent.
@@ -117,7 +101,7 @@ export function getOrderStatsFor(email) {
   const totalSpent = orders.reduce((sum, o) => sum + (o.total || 0), 0)
   return {
     count: orders.length,
-    totalSpent: Math.round(totalSpent * 100) / 100,
+    totalSpent: roundMoney(totalSpent),
     lastOrderId: orders.length ? orders[orders.length - 1].orderId : null,
     lastOrderAt: orders.length ? orders[orders.length - 1].ts : null,
   }
@@ -134,10 +118,10 @@ export function logCheckout(order, { source = 'unknown', user = null } = {}) {
     user,
     lineItems: order.items.length,
     itemCount,
-    total: Math.round(order.total * 100) / 100,
+    total: roundMoney(order.total),
     cardLast4: order.cardLast4,
-    summary: `Order ${order.orderId} placed via ${source} — ${order.items.length} line item(s), total $${order.total.toFixed(
-      2
+    summary: `Order ${order.orderId} placed via ${source} — ${order.items.length} line item(s), total ${formatMoney(
+      order.total
     )}`,
   })
   try {

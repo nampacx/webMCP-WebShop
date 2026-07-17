@@ -1,6 +1,9 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext.jsx'
 import { SHIPPING_THRESHOLD, computeTotals } from '../lib/pricing.js'
+import { formatMoney, lineTotal } from '../lib/money.js'
+import OrderSummary from '../components/OrderSummary.jsx'
+import ProductThumb from '../components/ProductThumb.jsx'
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, subtotal } = useCart()
@@ -28,13 +31,7 @@ export default function CartPage() {
         <div className="cart-items">
           {items.map(({ product, quantity }) => (
             <div className="cart-row" key={product.id}>
-              <div
-                className="cart-thumb"
-                style={{ background: product.color }}
-                aria-hidden="true"
-              >
-                <span style={{ color: product.accent }}>{product.category[0]}</span>
-              </div>
+              <ProductThumb product={product} className="cart-thumb" aria-hidden="true" />
 
               <div className="cart-info">
                 <h3>{product.name}</h3>
@@ -62,7 +59,7 @@ export default function CartPage() {
               </div>
 
               <div className="cart-line-price">
-                ${(product.price * quantity).toFixed(2)}
+                {formatMoney(lineTotal({ product, quantity }))}
               </div>
             </div>
           ))}
@@ -70,27 +67,13 @@ export default function CartPage() {
 
         <aside className="cart-summary">
           <h2>Order summary</h2>
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="summary-row">
-            <span>Shipping</span>
-            <span>{shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}</span>
-          </div>
-          <div className="summary-row">
-            <span>Tax (8%)</span>
-            <span>${tax.toFixed(2)}</span>
-          </div>
-          {shipping > 0 && (
-            <p className="shipping-note">
-              Add ${(SHIPPING_THRESHOLD - subtotal).toFixed(2)} more for free shipping.
-            </p>
-          )}
-          <div className="summary-row summary-total">
-            <span>Total</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
+          <OrderSummary subtotal={subtotal} shipping={shipping} tax={tax} total={total} taxLabel="Tax (8%)">
+            {shipping > 0 && (
+              <p className="shipping-note">
+                Add {formatMoney(SHIPPING_THRESHOLD - subtotal)} more for free shipping.
+              </p>
+            )}
+          </OrderSummary>
           <button className="btn btn-primary btn-block" onClick={() => navigate('/checkout')}>
             Proceed to checkout
           </button>

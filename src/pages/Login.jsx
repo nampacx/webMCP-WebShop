@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { dummyUsers } from '../data/users.js'
+import Field from '../components/Field.jsx'
 
 export default function Login() {
   const { login } = useAuth()
@@ -37,8 +38,7 @@ export default function Login() {
         <p className="auth-sub">Sign in to build your cart and check out.</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
-          <label className="field">
-            <span>Email</span>
+          <Field label="Email">
             <input
               type="email"
               value={email}
@@ -47,10 +47,9 @@ export default function Login() {
               autoComplete="username"
               required
             />
-          </label>
+          </Field>
 
-          <label className="field">
-            <span>Password</span>
+          <Field label="Password">
             <input
               type="password"
               value={password}
@@ -59,7 +58,7 @@ export default function Login() {
               autoComplete="current-password"
               required
             />
-          </label>
+          </Field>
 
           {error && <p className="form-error">{error}</p>}
 

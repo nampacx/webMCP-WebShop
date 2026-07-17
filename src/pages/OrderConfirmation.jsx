@@ -1,6 +1,8 @@
-import { useSyncExternalStore } from 'react'
 import { Link, useLocation, Navigate } from 'react-router-dom'
-import { mailboxStore } from '../lib/email/mailboxStore.js'
+import { formatMoney, lineTotal } from '../lib/money.js'
+import { useMailbox } from '../hooks/useStore.js'
+import OrderSummary from '../components/OrderSummary.jsx'
+import AddressBlock from '../components/AddressBlock.jsx'
 
 export default function OrderConfirmation() {
   const location = useLocation()
@@ -8,11 +10,7 @@ export default function OrderConfirmation() {
 
   // The confirmation email is sent asynchronously, so subscribe to the mailbox
   // and pick it up as soon as it lands.
-  const messages = useSyncExternalStore(
-    (cb) => mailboxStore.subscribe(cb),
-    () => mailboxStore.getMessages(),
-    () => mailboxStore.getMessages()
-  )
+  const messages = useMailbox()
   const email = order ? messages.find((m) => m.orderId === order.orderId) : null
 
   // Reached directly without placing an order.
@@ -88,7 +86,7 @@ export default function OrderConfirmation() {
                 <li key={idx}>
                   <span className="ci-qty">{item.quantity}×</span>
                   <span className="ci-name">{item.name}</span>
-                  <span className="ci-price">${(item.price * item.quantity).toFixed(2)}</span>
+                  <span className="ci-price">{formatMoney(lineTotal(item))}</span>
                 </li>
               ))}
             </ul>
@@ -96,35 +94,17 @@ export default function OrderConfirmation() {
 
           <section>
             <h2>Shipping to</h2>
-            <address className="confirm-address">
-              {order.shipTo.name}
-              <br />
-              {order.shipTo.address}
-              <br />
-              {order.shipTo.city}, {order.shipTo.zip}
-              <br />
-              {order.shipTo.country}
-            </address>
+            <AddressBlock address={order.shipTo} className="confirm-address" />
           </section>
         </div>
 
         <div className="confirm-totals">
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>${order.subtotal.toFixed(2)}</span>
-          </div>
-          <div className="summary-row">
-            <span>Shipping</span>
-            <span>{order.shipping === 0 ? 'Free' : `$${order.shipping.toFixed(2)}`}</span>
-          </div>
-          <div className="summary-row">
-            <span>Tax</span>
-            <span>${order.tax.toFixed(2)}</span>
-          </div>
-          <div className="summary-row summary-total">
-            <span>Total</span>
-            <span>${order.total.toFixed(2)}</span>
-          </div>
+          <OrderSummary
+            subtotal={order.subtotal}
+            shipping={order.shipping}
+            tax={order.tax}
+            total={order.total}
+          />
         </div>
 
         <Link to="/" className="btn btn-primary">

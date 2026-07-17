@@ -11,6 +11,7 @@
 // Every tool call is recorded to the audit log (see src/lib/auditLog.js).
 
 import { auditLog, redactArgs } from '../lib/auditLog.js'
+import { fail } from './toolHelpers.js'
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
@@ -69,7 +70,7 @@ class WebModelContext {
     const started = now()
     const tool = this.#tools.get(name)
     if (!tool) {
-      const result = { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+      const result = fail(`Unknown tool: ${name}`)
       this.#audit(name, args, result, started)
       return result
     }
@@ -78,10 +79,7 @@ class WebModelContext {
       this.#audit(name, args, result, started)
       return result
     } catch (err) {
-      const result = {
-        content: [{ type: 'text', text: `Error in ${name}: ${err?.message || String(err)}` }],
-        isError: true,
-      }
+      const result = fail(`Error in ${name}: ${err?.message || String(err)}`)
       this.#audit(name, args, result, started)
       return result
     }

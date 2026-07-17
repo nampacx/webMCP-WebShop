@@ -1,7 +1,7 @@
 // Order confirmation email template. Produces the subject plus text and HTML
 // bodies from an order. Kept transport-agnostic — see emailService.js.
 
-const money = (n) => `$${Number(n).toFixed(2)}`
+import { formatMoney as money, formatShipping } from '../money.js'
 
 export function renderOrderConfirmation(order, user) {
   const subject = `Your Contoso Sports order ${order.orderId}`
@@ -22,7 +22,7 @@ export function renderOrderConfirmation(order, user) {
     ...order.items.map((i) => `${i.quantity} x ${i.name} — ${money(i.price * i.quantity)}`),
     '',
     `Subtotal: ${money(order.subtotal)}`,
-    `Shipping: ${order.shipping === 0 ? 'Free' : money(order.shipping)}`,
+    `Shipping: ${formatShipping(order.shipping)}`,
     `Tax: ${money(order.tax)}`,
     `Total: ${money(order.total)}`,
     '',
@@ -89,7 +89,7 @@ export function renderOrderConfirmation(order, user) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
             ${rows}
             ${totalRow('Subtotal', money(order.subtotal))}
-            ${totalRow('Shipping', order.shipping === 0 ? 'Free' : money(order.shipping))}
+            ${totalRow('Shipping', formatShipping(order.shipping))}
             ${totalRow('Tax', money(order.tax))}
             ${totalRow('Total', money(order.total), true)}
           </table>

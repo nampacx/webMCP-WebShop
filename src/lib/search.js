@@ -2,6 +2,7 @@
 // WebMCP product tools, so the UI and the agent always see the same results.
 
 import { products } from '../data/products.js'
+import { isOnSale } from './pricing.js'
 
 export const SORT_OPTIONS = ['featured', 'price-asc', 'price-desc', 'rating', 'newest', 'reviews']
 
@@ -65,7 +66,7 @@ export function searchProducts({
     if (max !== null && !Number.isNaN(max) && p.price > max) return false
     if (minRat !== null && !Number.isNaN(minRat) && p.rating < minRat) return false
     if (inStockOnly && p.stock <= 0) return false
-    if (onSaleOnly && !(p.listPrice > p.price)) return false
+    if (onSaleOnly && !isOnSale(p)) return false
     if (tagList.length && !tagList.every((t) => (p.tags || []).some((pt) => pt.includes(t)))) {
       return false
     }
@@ -117,6 +118,6 @@ export function getFacets() {
     priceRange: { min: Math.min(...prices), max: Math.max(...prices) },
     sortOptions: SORT_OPTIONS,
     inStockCount: products.filter((p) => p.stock > 0).length,
-    onSaleCount: products.filter((p) => p.listPrice > p.price).length,
+    onSaleCount: products.filter(isOnSale).length,
   }
 }

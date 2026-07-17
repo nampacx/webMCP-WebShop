@@ -5,6 +5,11 @@ export const SHIPPING_THRESHOLD = 75
 export const SHIPPING_FEE = 6.99
 export const TAX_RATE = 0.08
 
+// A product is on sale when it has a list price above its current price.
+export function isOnSale(product) {
+  return product.listPrice > product.price
+}
+
 export function subtotalOf(items) {
   return items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
 }

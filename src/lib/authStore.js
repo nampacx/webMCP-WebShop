@@ -10,25 +10,14 @@
 //                        in the profile page survive sign-out/sign-in
 
 import { dummyUsers } from '../data/users.js'
+import { readJSON, writeJSON, removeKey } from './safeStorage.js'
+import { createStore } from './createStore.js'
 
 const STORAGE_KEY = 'contoso.auth.user'
 const PROFILE_KEY = 'contoso.profiles'
 
-function loadOverrides() {
-  try {
-    return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}')
-  } catch {
-    return {}
-  }
-}
-
-function saveOverrides(overrides) {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(overrides))
-  } catch {
-    /* ignore quota errors */
-  }
-}
+const loadOverrides = () => readJSON(PROFILE_KEY, {})
+const saveOverrides = (overrides) => writeJSON(PROFILE_KEY, overrides)
 
 // Build the app-facing user: source record + saved edits, minus the password.
 function toPublicUser(base, override = {}) {
@@ -41,40 +30,27 @@ function toPublicUser(base, override = {}) {
   }
 }
 
-function load() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    if (!saved?.id) return null
-    // Re-derive from source rather than trusting the stored copy, so older
-    // persisted sessions pick up the current profile shape.
-    const base = dummyUsers.find((u) => u.id === saved.id)
-    if (!base) return null
-    return toPublicUser(base, loadOverrides()[base.id])
-  } catch {
-    return null
-  }
+// Re-derive the signed-in user from source rather than trusting the stored copy,
+// so older persisted sessions pick up the current profile shape.
+function loadUser() {
+  const saved = readJSON(STORAGE_KEY, null)
+  if (!saved?.id) return null
+  const base = dummyUsers.find((u) => u.id === saved.id)
+  if (!base) return null
+  return toPublicUser(base, loadOverrides()[base.id])
 }
 
-let user = load()
-const listeners = new Set()
-
-function emit() {
-  try {
-    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: user.id }))
-    else localStorage.removeItem(STORAGE_KEY)
-  } catch {
-    /* ignore persistence errors */
-  }
-  listeners.forEach((l) => l())
+function persistUser(user) {
+  if (user) writeJSON(STORAGE_KEY, { id: user.id })
+  else removeKey(STORAGE_KEY)
 }
+
+const store = createStore({ load: loadUser, persist: persistUser })
 
 export const authStore = {
-  getUser: () => user,
-
-  subscribe(listener) {
-    listeners.add(listener)
-    return () => listeners.delete(listener)
-  },
+  getUser: store.getSnapshot,
+  getSnapshot: store.getSnapshot,
+  subscribe: store.subscribe,
 
   login(email, password) {
     const match = dummyUsers.find(
@@ -84,29 +60,28 @@ export const authStore = {
     if (!match) {
       return { ok: false, error: 'Invalid email or password.' }
     }
-    user = toPublicUser(match, loadOverrides()[match.id])
-    emit()
+    const user = toPublicUser(match, loadOverrides()[match.id])
+    store.set(user)
     return { ok: true, user }
   },
 
   logout() {
-    user = null
-    emit()
+    store.set(null)
   },
 
   // Merge a partial shipping address into the signed-in user's saved address
   // and persist it. Returns { ok, shippingAddress } or { ok:false, error }.
   updateShippingAddress(patch) {
+    const user = store.getSnapshot()
     if (!user) return { ok: false, error: 'Not signed in.' }
 
     const shippingAddress = { ...user.shippingAddress, ...patch }
-    user = { ...user, shippingAddress }
+    store.set({ ...user, shippingAddress })
 
     const overrides = loadOverrides()
     overrides[user.id] = { ...(overrides[user.id] || {}), shippingAddress }
     saveOverrides(overrides)
 
-    emit()
     return { ok: true, shippingAddress }
   },
 }

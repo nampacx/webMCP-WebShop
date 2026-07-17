@@ -3,8 +3,13 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { computeTotals } from '../lib/pricing.js'
+import { formatMoney, lineTotal } from '../lib/money.js'
 import { buildOrder } from '../lib/orders.js'
 import { finalizeCheckout } from '../lib/checkout.js'
+import { validateAddress, validatePayment } from '../lib/validation.js'
+import OrderSummary from '../components/OrderSummary.jsx'
+import ShippingForm from '../components/ShippingForm.jsx'
+import PaymentForm from '../components/PaymentForm.jsx'
 
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart()
@@ -13,7 +18,7 @@ export default function Checkout() {
 
   // Prefill from the user's saved shipping address (editable per order).
   const [form, setForm] = useState({
-    fullName: user?.shippingAddress?.name || user?.name || '',
+    name: user?.shippingAddress?.name || user?.name || '',
     address: user?.shippingAddress?.address || '',
     city: user?.shippingAddress?.city || '',
     zip: user?.shippingAddress?.zip || '',
@@ -38,16 +43,7 @@ export default function Checkout() {
   }
 
   function validate() {
-    const e = {}
-    if (!form.fullName.trim()) e.fullName = 'Required'
-    if (!form.address.trim()) e.address = 'Required'
-    if (!form.city.trim()) e.city = 'Required'
-    if (!/^\d{4,10}$/.test(form.zip.trim())) e.zip = 'Enter a valid ZIP/postal code'
-    if (!form.cardName.trim()) e.cardName = 'Required'
-    if (!/^\d{12,19}$/.test(form.cardNumber.replace(/\s/g, ''))) e.cardNumber = 'Enter 12–19 digits'
-    if (!/^\d{2}\/\d{2}$/.test(form.expiry.trim())) e.expiry = 'MM/YY'
-    if (!/^\d{3,4}$/.test(form.cvc.trim())) e.cvc = '3–4 digits'
-    return e
+    return { ...validateAddress(form), ...validatePayment(form) }
   }
 
   function handleSubmit(e) {
@@ -62,7 +58,7 @@ export default function Checkout() {
       const order = buildOrder({
         items,
         shipTo: {
-          name: form.fullName,
+          name: form.name,
           address: form.address,
           city: form.city,
           zip: form.zip,
@@ -82,58 +78,8 @@ export default function Checkout() {
 
       <form className="checkout-layout" onSubmit={handleSubmit} noValidate>
         <div className="checkout-forms">
-          <fieldset className="form-section">
-            <legend>Shipping address</legend>
-            <Field label="Full name" error={errors.fullName}>
-              <input value={form.fullName} onChange={(e) => update('fullName', e.target.value)} />
-            </Field>
-            <Field label="Street address" error={errors.address}>
-              <input value={form.address} onChange={(e) => update('address', e.target.value)} />
-            </Field>
-            <div className="form-cols">
-              <Field label="City" error={errors.city}>
-                <input value={form.city} onChange={(e) => update('city', e.target.value)} />
-              </Field>
-              <Field label="ZIP / Postal" error={errors.zip}>
-                <input value={form.zip} onChange={(e) => update('zip', e.target.value)} />
-              </Field>
-            </div>
-            <Field label="Country" error={errors.country}>
-              <select value={form.country} onChange={(e) => update('country', e.target.value)}>
-                <option>United States</option>
-                <option>Canada</option>
-                <option>United Kingdom</option>
-                <option>Germany</option>
-                <option>Australia</option>
-              </select>
-            </Field>
-          </fieldset>
-
-          <fieldset className="form-section">
-            <legend>Payment</legend>
-            <p className="demo-note">
-              Demo only — do not enter real card details. Any 12–19 digit number is accepted.
-            </p>
-            <Field label="Name on card" error={errors.cardName}>
-              <input value={form.cardName} onChange={(e) => update('cardName', e.target.value)} />
-            </Field>
-            <Field label="Card number" error={errors.cardNumber}>
-              <input
-                inputMode="numeric"
-                placeholder="4111 1111 1111 1111"
-                value={form.cardNumber}
-                onChange={(e) => update('cardNumber', e.target.value)}
-              />
-            </Field>
-            <div className="form-cols">
-              <Field label="Expiry (MM/YY)" error={errors.expiry}>
-                <input placeholder="12/28" value={form.expiry} onChange={(e) => update('expiry', e.target.value)} />
-              </Field>
-              <Field label="CVC" error={errors.cvc}>
-                <input inputMode="numeric" placeholder="123" value={form.cvc} onChange={(e) => update('cvc', e.target.value)} />
-              </Field>
-            </div>
-          </fieldset>
+          <ShippingForm form={form} errors={errors} update={update} />
+          <PaymentForm form={form} errors={errors} update={update} />
         </div>
 
         <aside className="checkout-summary">
@@ -143,43 +89,16 @@ export default function Checkout() {
               <li key={product.id}>
                 <span className="ci-qty">{quantity}×</span>
                 <span className="ci-name">{product.name}</span>
-                <span className="ci-price">${(product.price * quantity).toFixed(2)}</span>
+                <span className="ci-price">{formatMoney(lineTotal({ product, quantity }))}</span>
               </li>
             ))}
           </ul>
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="summary-row">
-            <span>Shipping</span>
-            <span>{shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}</span>
-          </div>
-          <div className="summary-row">
-            <span>Tax (8%)</span>
-            <span>${tax.toFixed(2)}</span>
-          </div>
-          <div className="summary-row summary-total">
-            <span>Total</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
+          <OrderSummary subtotal={subtotal} shipping={shipping} tax={tax} total={total} taxLabel="Tax (8%)" />
           <button type="submit" className="btn btn-primary btn-block" disabled={placing}>
-            {placing ? 'Placing order…' : `Place order · $${total.toFixed(2)}`}
+            {placing ? 'Placing order…' : `Place order · ${formatMoney(total)}`}
           </button>
         </aside>
       </form>
     </div>
-  )
-}
-
-function Field({ label, error, children }) {
-  return (
-    <label className={`field ${error ? 'field-error' : ''}`}>
-      <span>
-        {label}
-        {error && <em className="field-msg">{error}</em>}
-      </span>
-      {children}
-    </label>
   )
 }

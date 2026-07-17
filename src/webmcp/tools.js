@@ -5,47 +5,20 @@
 // Each tool returns an MCP-style result: { content: [...], structuredContent }.
 
 import { categories } from '../data/products.js'
-import { searchProducts, getProductById, getFacets, SORT_OPTIONS } from '../lib/search.js'
+import { searchProducts, getFacets, SORT_OPTIONS } from '../lib/search.js'
 import { cartStore } from '../lib/cartStore.js'
 import { authStore } from '../lib/authStore.js'
-import { subtotalOf, totalItemsOf, computeTotals } from '../lib/pricing.js'
+import { isOnSale } from '../lib/pricing.js'
+import { formatMoney } from '../lib/money.js'
+import { summarizeCart } from '../lib/cart.js'
+import { validateAddress } from '../lib/validation.js'
 import { buildOrder } from '../lib/orders.js'
 import { finalizeCheckout } from '../lib/checkout.js'
 import { getOrderStatsFor } from '../lib/auditLog.js'
+import { ok, fail, requireUser, resolveProduct } from './toolHelpers.js'
 
-const round = (n) => Math.round(n * 100) / 100
-
-function ok(structuredContent, text) {
-  return {
-    content: [{ type: 'text', text: text ?? JSON.stringify(structuredContent) }],
-    structuredContent,
-  }
-}
-
-function fail(text) {
-  return { content: [{ type: 'text', text }], isError: true }
-}
-
-// Shared snapshot of the cart used by several tools.
-function cartSummary() {
-  const items = cartStore.getItems()
-  const subtotal = subtotalOf(items)
-  const { shipping, tax, total } = computeTotals(subtotal)
-  return {
-    items: items.map((i) => ({
-      productId: i.product.id,
-      name: i.product.name,
-      quantity: i.quantity,
-      unitPrice: i.product.price,
-      lineTotal: round(i.product.price * i.quantity),
-    })),
-    totalItems: totalItemsOf(items),
-    subtotal: round(subtotal),
-    shipping: round(shipping),
-    tax: round(tax),
-    total: round(total),
-  }
-}
+// The cart summary shared by several tools.
+const cartSummary = () => summarizeCart(cartStore.getItems())
 
 // Compact shape for search results — enough to choose a product, small enough
 // to return many. Use shop_get_product for the full record.
@@ -58,7 +31,7 @@ function productSummary(p) {
     category: p.category,
     price: p.price,
     listPrice: p.listPrice ?? null,
-    onSale: p.listPrice > p.price,
+    onSale: isOnSale(p),
     rating: p.rating,
     reviewCount: p.reviewCount,
     stock: p.stock,
@@ -139,8 +112,8 @@ export function createShopTools({ onCheckout } = {}) {
           { count: all.length, returned: results.length, products: results },
           `Found ${all.length} product(s)` +
             (results.length
-              ? `; top result: ${results[0].name} ($${results[0].price}${
-                  results[0].onSale ? `, was $${results[0].listPrice}` : ''
+              ? `; top result: ${results[0].name} (${formatMoney(results[0].price)}${
+                  results[0].onSale ? `, was ${formatMoney(results[0].listPrice)}` : ''
                 }).`
               : '.')
         )
@@ -162,13 +135,13 @@ export function createShopTools({ onCheckout } = {}) {
         required: ['productId'],
       },
       execute({ productId }) {
-        const product = getProductById(productId)
-        if (!product) return fail(`No product found with id or SKU "${productId}".`)
+        const { product, error } = resolveProduct(productId)
+        if (error) return error
         const detail = productDetail(product)
         return ok(
           detail,
-          `${detail.name} (${detail.sku}) — $${detail.price}${
-            detail.onSale ? ` (was $${detail.listPrice})` : ''
+          `${detail.name} (${detail.sku}) — ${formatMoney(detail.price)}${
+            detail.onSale ? ` (was ${formatMoney(detail.listPrice)})` : ''
           }, rated ${detail.rating}/5 from ${detail.reviewCount} reviews, ${
             detail.inStock ? `${detail.stock} in stock` : 'out of stock'
           }. ${detail.description}`
@@ -185,7 +158,7 @@ export function createShopTools({ onCheckout } = {}) {
         const facets = getFacets()
         return ok(
           facets,
-          `${facets.productCount} products across ${facets.categories.length} categories and ${facets.brands.length} brands. Prices $${facets.priceRange.min}–$${facets.priceRange.max}; ${facets.onSaleCount} on sale.`
+          `${facets.productCount} products across ${facets.categories.length} categories and ${facets.brands.length} brands. Prices ${formatMoney(facets.priceRange.min)}–${formatMoney(facets.priceRange.max)}; ${facets.onSaleCount} on sale.`
         )
       },
     },
@@ -210,14 +183,14 @@ export function createShopTools({ onCheckout } = {}) {
         required: ['productId'],
       },
       execute({ productId, quantity = 1 }) {
-        const product = getProductById(productId)
-        if (!product) return fail(`No product found with id or SKU "${productId}".`)
+        const { product, error } = resolveProduct(productId)
+        if (error) return error
         if (product.stock === 0) return fail(`"${product.name}" is out of stock.`)
         cartStore.addItem(product, Math.max(1, quantity))
         const summary = cartSummary()
         return ok(
           summary,
-          `Added ${quantity}× ${product.name}. Cart now has ${summary.totalItems} item(s), total $${summary.total}.`
+          `Added ${quantity}× ${product.name}. Cart now has ${summary.totalItems} item(s), total ${formatMoney(summary.total)}.`
         )
       },
     },
@@ -232,7 +205,7 @@ export function createShopTools({ onCheckout } = {}) {
         if (summary.items.length === 0) return ok(summary, 'The cart is empty.')
         return ok(
           summary,
-          `Cart has ${summary.totalItems} item(s). Subtotal $${summary.subtotal}, total $${summary.total}.`
+          `Cart has ${summary.totalItems} item(s). Subtotal ${formatMoney(summary.subtotal)}, total ${formatMoney(summary.total)}.`
         )
       },
     },
@@ -312,14 +285,14 @@ export function createShopTools({ onCheckout } = {}) {
         "Get the signed-in user's profile facts: name, email, phone, member since, loyalty tier and points, saved shipping address, preferences, and order stats (orders placed / total spent). Requires sign-in.",
       inputSchema: { type: 'object', properties: {} },
       execute() {
-        const user = authStore.getUser()
-        if (!user) return fail('Not signed in. Call shop_sign_in first.')
+        const { user, error } = requireUser()
+        if (error) return error
 
         const orderStats = getOrderStatsFor(user.email)
         const a = user.shippingAddress
         return ok(
           { ...user, orderStats },
-          `${user.name} (${user.email}) — ${user.loyaltyTier} tier, ${user.loyaltyPoints} points, member since ${user.memberSince}. Ships to ${a.address}, ${a.city} ${a.zip}, ${a.country}. ${orderStats.count} order(s), $${orderStats.totalSpent} spent.`
+          `${user.name} (${user.email}) — ${user.loyaltyTier} tier, ${user.loyaltyPoints} points, member since ${user.memberSince}. Ships to ${a.address}, ${a.city} ${a.zip}, ${a.country}. ${orderStats.count} order(s), ${formatMoney(orderStats.totalSpent)} spent.`
         )
       },
     },
@@ -339,8 +312,8 @@ export function createShopTools({ onCheckout } = {}) {
         },
       },
       execute(patch) {
-        const user = authStore.getUser()
-        if (!user) return fail('Not signed in. Call shop_sign_in first.')
+        const { error } = requireUser()
+        if (error) return error
 
         const fields = ['name', 'address', 'city', 'zip', 'country']
         const clean = {}
@@ -387,8 +360,8 @@ export function createShopTools({ onCheckout } = {}) {
         },
       },
       async execute({ fullName, address, city, zip, country, cardNumber }) {
-        const user = authStore.getUser()
-        if (!user) return fail('Not signed in. Call shop_sign_in before checking out.')
+        const { user, error } = requireUser()
+        if (error) return error
 
         const items = cartStore.getItems()
         if (items.length === 0) return fail('Cart is empty. Add items before checking out.')
@@ -402,7 +375,9 @@ export function createShopTools({ onCheckout } = {}) {
           zip: zip || saved.zip,
           country: country || saved.country || 'United States',
         }
-        const missing = ['address', 'city', 'zip'].filter((f) => !shipTo[f])
+        const missing = Object.keys(
+          validateAddress(shipTo, { fields: ['address', 'city', 'zip'], requireZipFormat: false })
+        )
         if (missing.length) {
           return fail(
             `Missing shipping ${missing.join(', ')}. Pass them, or save an address first with shop_update_shipping_address.`
@@ -421,7 +396,7 @@ export function createShopTools({ onCheckout } = {}) {
 
         return ok(
           { ...order, confirmationEmail: { sent: !!email?.ok, to: user.email } },
-          `Order ${order.orderId} placed for ${user.name}. ${order.items.length} line item(s), total $${round(
+          `Order ${order.orderId} placed for ${user.name}. ${order.items.length} line item(s), total ${formatMoney(
             order.total
           )}. Confirmation email ${email?.ok ? 'sent' : 'could not be sent'} to ${user.email}.`
         )

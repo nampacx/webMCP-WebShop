@@ -8,6 +8,8 @@ const SORTS = {
   'price-asc': 'Price: Low to High',
   'price-desc': 'Price: High to Low',
   rating: 'Top Rated',
+  newest: 'Newest',
+  reviews: 'Most Reviewed',
 }
 
 export default function Catalog() {

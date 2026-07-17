@@ -5,7 +5,8 @@ Everything (catalog, users, cart, checkout) runs client-side with static dummy d
 
 ## Features
 
-- **Catalog with search** — browse 16 dummy products, search by name/brand/category/description, filter by category, and sort by price or rating.
+- **Catalog with search** — browse 17 detailed dummy products, search across every field, filter by category, and sort by price, rating, recency or review count.
+- **Product detail pages** (`/product/:id`) — long description, highlights, full technical specs, available sizes and colourways, tags, SKU, warranty and release year.
 - **Dummy sign-in** — sign in with a demo account (no real auth). Session persists in `localStorage`.
 - **Shopping cart** — add items, change quantities, remove items. Cart persists in `localStorage`. Cart & checkout require sign-in.
 - **Checkout** — shipping + payment form with validation (demo only, no real payment).
@@ -36,8 +37,10 @@ Two global surfaces are installed:
 
 | Tool | Purpose |
 | --- | --- |
-| `shop_search_products` | Search/filter/sort the catalog (`query`, `category`, `sort`, `limit`) |
-| `shop_add_to_cart` | Add a product by `productId` (+ optional `quantity`) |
+| `shop_search_products` | Search/filter/sort the catalog — see below |
+| `shop_get_product` | Full record for one product by id or SKU (specs, features, sizes, colourways…) |
+| `shop_list_facets` | Valid categories, brands, tags, price range and sort options |
+| `shop_add_to_cart` | Add a product by `productId` or SKU (+ optional `quantity`) |
 | `shop_view_cart` | Return cart lines plus subtotal/shipping/tax/total |
 | `shop_update_cart_item` | Set an item's quantity (0 removes it) |
 | `shop_remove_from_cart` | Remove an item |
@@ -46,6 +49,32 @@ Two global surfaces are installed:
 | `shop_checkout` | Place the order (requires sign-in + non-empty cart) |
 
 Each tool returns an MCP-style result: `{ content: [{ type: 'text', text }], structuredContent }`.
+
+#### Product search
+
+`shop_search_products` free-text `query` matches **all** whitespace-separated terms (in any
+order) across name, brand, category, SKU, description, details, features, specs, colourways
+and tags — so `"downhill mtb helmet"` finds the DH helmet. It can be combined with filters:
+
+| Param | Meaning |
+| --- | --- |
+| `query` | Free text (all terms must match) |
+| `category` | One of the catalog categories, or `All` |
+| `brand` | Exact brand, e.g. `Contoso` |
+| `minPrice` / `maxPrice` | Price range |
+| `minRating` | Minimum rating (0-5) |
+| `inStockOnly` | Exclude out-of-stock |
+| `onSaleOnly` | Only items where `listPrice > price` |
+| `tags` | Require all tags, e.g. `["downhill","helmet"]` |
+| `sort` | `featured`, `price-asc`, `price-desc`, `rating`, `newest`, `reviews` |
+| `limit` | Max results (default 10) |
+
+```js
+await window.webmcp.callTool('shop_list_facets', {})                       // discover valid values
+await window.webmcp.callTool('shop_search_products', { query: 'downhill mtb helmet' })
+await window.webmcp.callTool('shop_search_products', { category: 'Cycling', onSaleOnly: true, sort: 'price-desc' })
+await window.webmcp.callTool('shop_get_product', { productId: 'CS-CYC-003' })  // full specs
+```
 
 ### Try it
 
@@ -187,7 +216,8 @@ src/
                   auditLog        (persistent WebMCP tool-usage audit trail)
                   checkout.js     (post-checkout effects: audit + send email)
                   email/          (demo email service, see above)
-  pages/          Catalog, Login, CartPage, Checkout, OrderConfirmation
+  pages/          Catalog, ProductDetail, Login, CartPage, Checkout,
+                  OrderConfirmation
   webmcp/         runtime.js      (navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)
                   WebMCPProvider  (registers tools; wires checkout navigation)

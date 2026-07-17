@@ -4,9 +4,8 @@
 // an agent making sequential calls always observes fresh, consistent state.
 // Each tool returns an MCP-style result: { content: [...], structuredContent }.
 
-import { products } from '../data/products.js'
 import { categories } from '../data/products.js'
-import { searchProducts } from '../lib/search.js'
+import { searchProducts, getProductById, getFacets, SORT_OPTIONS } from '../lib/search.js'
 import { cartStore } from '../lib/cartStore.js'
 import { authStore } from '../lib/authStore.js'
 import { subtotalOf, totalItemsOf, computeTotals } from '../lib/pricing.js'
@@ -47,16 +46,38 @@ function cartSummary() {
   }
 }
 
-function publicProduct(p) {
+// Compact shape for search results — enough to choose a product, small enough
+// to return many. Use shop_get_product for the full record.
+function productSummary(p) {
   return {
     id: p.id,
+    sku: p.sku,
     name: p.name,
     brand: p.brand,
     category: p.category,
     price: p.price,
+    listPrice: p.listPrice ?? null,
+    onSale: p.listPrice > p.price,
     rating: p.rating,
+    reviewCount: p.reviewCount,
     stock: p.stock,
+    inStock: p.stock > 0,
     description: p.description,
+  }
+}
+
+// Everything known about a product.
+function productDetail(p) {
+  return {
+    ...productSummary(p),
+    details: p.details,
+    features: p.features,
+    specs: p.specs,
+    sizes: p.sizes,
+    colorways: p.colorways,
+    tags: p.tags,
+    warrantyMonths: p.warrantyMonths,
+    releaseYear: p.releaseYear,
   }
 }
 
@@ -66,23 +87,41 @@ export function createShopTools({ onCheckout } = {}) {
     {
       name: 'shop_search_products',
       description:
-        'Search the Contoso Sports catalog. Filter by free-text query and/or category, optionally sort, and limit results. Returns matching products with their id, price and stock.',
+        'Search the Contoso Sports catalog. Free-text search covers name, brand, category, SKU, description, features, specs, colourways and tags (e.g. "downhill mtb helmet"). Combine with filters for category, brand, price range, rating, stock and sale. Returns compact product summaries — call shop_get_product for full specs. Use shop_list_facets to discover valid categories, brands and tags.',
       inputSchema: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Free-text search over name, brand, category and description.',
+            description:
+              'Free-text search over name, brand, category, SKU, description, details, features, specs, colourways and tags.',
           },
           category: {
             type: 'string',
             enum: categories,
             description: 'Restrict to a category. "All" (default) means no restriction.',
           },
+          brand: { type: 'string', description: 'Restrict to an exact brand, e.g. "Contoso".' },
+          minPrice: { type: 'number', minimum: 0, description: 'Only products at or above this price.' },
+          maxPrice: { type: 'number', minimum: 0, description: 'Only products at or below this price.' },
+          minRating: {
+            type: 'number',
+            minimum: 0,
+            maximum: 5,
+            description: 'Only products rated at or above this (0-5).',
+          },
+          inStockOnly: { type: 'boolean', description: 'Exclude out-of-stock products.' },
+          onSaleOnly: { type: 'boolean', description: 'Only products whose listPrice exceeds price.' },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Require all of these tags, e.g. ["downhill","helmet"].',
+          },
           sort: {
             type: 'string',
-            enum: ['featured', 'price-asc', 'price-desc', 'rating'],
-            description: 'Result ordering. Defaults to "featured".',
+            enum: SORT_OPTIONS,
+            description:
+              'Ordering: featured (default), price-asc, price-desc, rating, newest, reviews.',
           },
           limit: {
             type: 'integer',
@@ -92,13 +131,60 @@ export function createShopTools({ onCheckout } = {}) {
           },
         },
       },
-      execute({ query = '', category = 'All', sort = 'featured', limit = 10 }) {
-        const all = searchProducts({ query, category, sort })
-        const results = all.slice(0, limit).map(publicProduct)
+      execute({ limit = 10, ...filters }) {
+        const all = searchProducts(filters)
+        const results = all.slice(0, limit).map(productSummary)
         return ok(
           { count: all.length, returned: results.length, products: results },
           `Found ${all.length} product(s)` +
-            (results.length ? `; top result: ${results[0].name} ($${results[0].price}).` : '.')
+            (results.length
+              ? `; top result: ${results[0].name} ($${results[0].price}${
+                  results[0].onSale ? `, was $${results[0].listPrice}` : ''
+                }).`
+              : '.')
+        )
+      },
+    },
+
+    {
+      name: 'shop_get_product',
+      description:
+        'Get the full record for one product by id or SKU: long description, features, technical specs, available sizes and colourways, tags, warranty and release year.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          productId: {
+            type: 'string',
+            description: 'Product id (e.g. "cy-003") or SKU (e.g. "CS-CYC-003").',
+          },
+        },
+        required: ['productId'],
+      },
+      execute({ productId }) {
+        const product = getProductById(productId)
+        if (!product) return fail(`No product found with id or SKU "${productId}".`)
+        const detail = productDetail(product)
+        return ok(
+          detail,
+          `${detail.name} (${detail.sku}) — $${detail.price}${
+            detail.onSale ? ` (was $${detail.listPrice})` : ''
+          }, rated ${detail.rating}/5 from ${detail.reviewCount} reviews, ${
+            detail.inStock ? `${detail.stock} in stock` : 'out of stock'
+          }. ${detail.description}`
+        )
+      },
+    },
+
+    {
+      name: 'shop_list_facets',
+      description:
+        'List the filter values that exist in the catalog — categories, brands, tags, price range and sort options — so a search can be built without guessing.',
+      inputSchema: { type: 'object', properties: {} },
+      execute() {
+        const facets = getFacets()
+        return ok(
+          facets,
+          `${facets.productCount} products across ${facets.categories.length} categories and ${facets.brands.length} brands. Prices $${facets.priceRange.min}–$${facets.priceRange.max}; ${facets.onSaleCount} on sale.`
         )
       },
     },
@@ -110,7 +196,10 @@ export function createShopTools({ onCheckout } = {}) {
       inputSchema: {
         type: 'object',
         properties: {
-          productId: { type: 'string', description: 'The product id, e.g. "run-001".' },
+          productId: {
+            type: 'string',
+            description: 'Product id (e.g. "run-001") or SKU (e.g. "CS-RUN-001").',
+          },
           quantity: {
             type: 'integer',
             minimum: 1,
@@ -120,8 +209,8 @@ export function createShopTools({ onCheckout } = {}) {
         required: ['productId'],
       },
       execute({ productId, quantity = 1 }) {
-        const product = products.find((p) => p.id === productId)
-        if (!product) return fail(`No product found with id "${productId}".`)
+        const product = getProductById(productId)
+        if (!product) return fail(`No product found with id or SKU "${productId}".`)
         if (product.stock === 0) return fail(`"${product.name}" is out of stock.`)
         cartStore.addItem(product, Math.max(1, quantity))
         const summary = cartSummary()

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar.jsx'
 import Catalog from './pages/Catalog.jsx'
+import ProductDetail from './pages/ProductDetail.jsx'
 import Login from './pages/Login.jsx'
 import CartPage from './pages/CartPage.jsx'
 import Checkout from './pages/Checkout.jsx'
@@ -26,6 +27,7 @@ export default function App() {
       <main className="main">
         <Routes>
           <Route path="/" element={<Catalog />} />
+          <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/login" element={<Login />} />
           <Route
             path="/cart"

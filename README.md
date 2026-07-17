@@ -104,6 +104,54 @@ $ cat audit-log.jsonl
 {"id":"…","ts":"…","type":"checkout","source":"webmcp","orderId":"CS-…","total":193.32,…}
 ```
 
+## Email service (order confirmation)
+
+After a successful checkout — from **either** the checkout form or the WebMCP
+`shop_checkout` tool — an order confirmation email is composed and sent to the
+signed-in user.
+
+> **No real email is delivered.** The demo users' addresses aren't real inboxes, and
+> real delivery would need a mail provider, an API key and a backend. Instead the
+> service produces the actual message and delivers it through demo transports.
+
+**Transports** (`src/lib/email/transports.js`) — a transport is
+`{ name, async send(message) }`:
+
+| Transport | What it does |
+| --- | --- |
+| `mailbox` | Stores the message in an in-app mailbox so it can be previewed in the UI |
+| `dev-file` | Writes a real `.eml` file to `sent-emails/` in the repo root (dev only) |
+| `console` | Logs the message (available, not enabled by default) |
+
+The `.eml` files are proper RFC-822 `multipart/alternative` messages (text + HTML),
+so you can double-click one and it opens in a normal mail client.
+
+**Where you see it**
+- The **order confirmation page** shows "Confirmation email sent to …" with a
+  **View email** preview of the real rendered HTML.
+- `sent-emails/*.eml` on disk (git-ignored runtime data).
+- The audit log records an `email` entry per send (recipient, subject, message id,
+  order id, and per-transport results).
+
+**Sending real email.** Add a transport that calls your provider (SendGrid/SES/SMTP)
+and register it:
+
+```js
+import { setTransports } from './lib/email/emailService.js'
+setTransports([myProviderTransport])
+```
+
+That transport needs a server/API key to hold the credential — which is why it's
+intentionally not included here.
+
+```
+src/lib/email/
+  templates.js     renderOrderConfirmation(order, user) -> { subject, text, html }
+  emailService.js  composes, dispatches through transports, writes the audit entry
+  transports.js    mailbox / dev-file / console transports (plug a real one in here)
+  mailboxStore.js  in-app mailbox for previewing sent messages
+```
+
 ## Getting started
 
 ```bash
@@ -137,6 +185,8 @@ src/
   lib/            cartStore, authStore  (external state shared with WebMCP)
                   pricing, search, orders  (shared logic)
                   auditLog        (persistent WebMCP tool-usage audit trail)
+                  checkout.js     (post-checkout effects: audit + send email)
+                  email/          (demo email service, see above)
   pages/          Catalog, Login, CartPage, Checkout, OrderConfirmation
   webmcp/         runtime.js      (navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)

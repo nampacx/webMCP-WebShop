@@ -7,3 +7,6 @@ dist-ssr
 
 # Runtime audit log written by the dev server (see vite.config.js)
 audit-log.jsonl
+
+# Demo emails written by the dev email service (see vite.config.js)
+sent-emails/

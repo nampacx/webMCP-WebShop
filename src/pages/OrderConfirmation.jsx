@@ -1,8 +1,19 @@
+import { useSyncExternalStore } from 'react'
 import { Link, useLocation, Navigate } from 'react-router-dom'
+import { mailboxStore } from '../lib/email/mailboxStore.js'
 
 export default function OrderConfirmation() {
   const location = useLocation()
   const order = location.state?.order
+
+  // The confirmation email is sent asynchronously, so subscribe to the mailbox
+  // and pick it up as soon as it lands.
+  const messages = useSyncExternalStore(
+    (cb) => mailboxStore.subscribe(cb),
+    () => mailboxStore.getMessages(),
+    () => mailboxStore.getMessages()
+  )
+  const email = order ? messages.find((m) => m.orderId === order.orderId) : null
 
   // Reached directly without placing an order.
   if (!order) {
@@ -17,8 +28,42 @@ export default function OrderConfirmation() {
         <div className="confirm-check" aria-hidden="true">✓</div>
         <h1>Thank you for your order!</h1>
         <p className="confirm-sub">
-          A confirmation has been “sent” to your email. This is a demo — no real order was placed.
+          This is a demo — no real order was placed and no real email was delivered.
         </p>
+
+        {email ? (
+          <details className="email-notice">
+            <summary>
+              <span className="email-icon" aria-hidden="true">✉</span>
+              Confirmation email sent to <strong>{email.to}</strong>
+              <span className="email-toggle">View email</span>
+            </summary>
+            <div className="email-preview">
+              <div className="email-headers">
+                <div>
+                  <span>From</span>
+                  {email.from}
+                </div>
+                <div>
+                  <span>To</span>
+                  {email.to}
+                </div>
+                <div>
+                  <span>Subject</span>
+                  {email.subject}
+                </div>
+              </div>
+              <iframe
+                title={`Confirmation email for ${order.orderId}`}
+                className="email-frame"
+                sandbox=""
+                srcDoc={email.html}
+              />
+            </div>
+          </details>
+        ) : (
+          <p className="email-notice email-pending">Sending confirmation email…</p>
+        )}
 
         <div className="confirm-meta">
           <div>

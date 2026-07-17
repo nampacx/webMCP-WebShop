@@ -11,7 +11,7 @@ import { cartStore } from '../lib/cartStore.js'
 import { authStore } from '../lib/authStore.js'
 import { subtotalOf, totalItemsOf, computeTotals } from '../lib/pricing.js'
 import { buildOrder } from '../lib/orders.js'
-import { logCheckout } from '../lib/auditLog.js'
+import { finalizeCheckout } from '../lib/checkout.js'
 
 const round = (n) => Math.round(n * 100) / 100
 
@@ -219,7 +219,7 @@ export function createShopTools({ onCheckout } = {}) {
     {
       name: 'shop_checkout',
       description:
-        'Place the order for the current cart. Requires being signed in (call shop_sign_in first) and a non-empty cart. Provide a shipping address. This is a demo — no real payment is taken; card details are optional and default to a demo card. Returns the order confirmation.',
+        'Place the order for the current cart. Requires being signed in (call shop_sign_in first) and a non-empty cart. Provide a shipping address. A confirmation email is sent to the signed-in user. This is a demo — no real payment is taken and no real email is delivered; card details are optional and default to a demo card. Returns the order confirmation.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -235,7 +235,7 @@ export function createShopTools({ onCheckout } = {}) {
         },
         required: ['address', 'city', 'zip'],
       },
-      execute({ fullName, address, city, zip, country, cardNumber }) {
+      async execute({ fullName, address, city, zip, country, cardNumber }) {
         const user = authStore.getUser()
         if (!user) return fail('Not signed in. Call shop_sign_in before checking out.')
 
@@ -255,14 +255,14 @@ export function createShopTools({ onCheckout } = {}) {
         })
 
         cartStore.clear()
-        logCheckout(order, { source: 'webmcp', user: user.email })
+        const email = await finalizeCheckout(order, { source: 'webmcp', user })
         if (typeof onCheckout === 'function') onCheckout(order)
 
         return ok(
-          order,
+          { ...order, confirmationEmail: { sent: !!email?.ok, to: user.email } },
           `Order ${order.orderId} placed for ${user.name}. ${order.items.length} line item(s), total $${round(
             order.total
-          )}.`
+          )}. Confirmation email ${email?.ok ? 'sent' : 'could not be sent'} to ${user.email}.`
         )
       },
     },

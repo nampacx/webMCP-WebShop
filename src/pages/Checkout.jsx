@@ -4,7 +4,7 @@ import { useCart } from '../context/CartContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { computeTotals } from '../lib/pricing.js'
 import { buildOrder } from '../lib/orders.js'
-import { logCheckout } from '../lib/auditLog.js'
+import { finalizeCheckout } from '../lib/checkout.js'
 
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart()
@@ -70,7 +70,7 @@ export default function Checkout() {
         cardNumber: form.cardNumber,
       })
       clearCart()
-      logCheckout(order, { source: 'ui', user: user?.email })
+      finalizeCheckout(order, { source: 'ui', user })
       navigate('/order-confirmation', { replace: true, state: { order } })
     }, 900)
   }

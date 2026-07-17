@@ -104,6 +104,25 @@ export const auditLog = {
   },
 }
 
+// Checkout events recorded for a given user, oldest first. The audit trail is
+// the only order history this backend-less demo has.
+export function getCheckoutsFor(email) {
+  if (!email) return []
+  return entries.filter((e) => e.type === 'checkout' && e.user === email)
+}
+
+// Aggregate order facts for a user: how many orders and how much spent.
+export function getOrderStatsFor(email) {
+  const orders = getCheckoutsFor(email)
+  const totalSpent = orders.reduce((sum, o) => sum + (o.total || 0), 0)
+  return {
+    count: orders.length,
+    totalSpent: Math.round(totalSpent * 100) / 100,
+    lastOrderId: orders.length ? orders[orders.length - 1].orderId : null,
+    lastOrderAt: orders.length ? orders[orders.length - 1].ts : null,
+  }
+}
+
 // Record a completed checkout as a distinct business event. `source` is where
 // the checkout was initiated from: "webmcp" (agent tool) or "ui" (checkout form).
 export function logCheckout(order, { source = 'unknown', user = null } = {}) {

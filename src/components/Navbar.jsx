@@ -37,7 +37,9 @@ export default function Navbar() {
         <div className="nav-account">
           {isAuthenticated ? (
             <>
-              <span className="nav-user">Hi, {user.name.split(' ')[0]}</span>
+              <NavLink to="/profile" className="nav-user">
+                Hi, {user.name.split(' ')[0]}
+              </NavLink>
               <button className="btn btn-ghost" onClick={handleLogout}>
                 Sign out
               </button>

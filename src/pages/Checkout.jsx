@@ -11,12 +11,13 @@ export default function Checkout() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
+  // Prefill from the user's saved shipping address (editable per order).
   const [form, setForm] = useState({
-    fullName: user?.name || '',
-    address: '',
-    city: '',
-    zip: '',
-    country: 'United States',
+    fullName: user?.shippingAddress?.name || user?.name || '',
+    address: user?.shippingAddress?.address || '',
+    city: user?.shippingAddress?.city || '',
+    zip: user?.shippingAddress?.zip || '',
+    country: user?.shippingAddress?.country || 'United States',
     cardName: '',
     cardNumber: '',
     expiry: '',

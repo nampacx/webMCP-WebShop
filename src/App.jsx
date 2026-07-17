@@ -3,6 +3,7 @@ import Navbar from './components/Navbar.jsx'
 import Catalog from './pages/Catalog.jsx'
 import ProductDetail from './pages/ProductDetail.jsx'
 import Login from './pages/Login.jsx'
+import Profile from './pages/Profile.jsx'
 import CartPage from './pages/CartPage.jsx'
 import Checkout from './pages/Checkout.jsx'
 import OrderConfirmation from './pages/OrderConfirmation.jsx'
@@ -29,6 +30,14 @@ export default function App() {
           <Route path="/" element={<Catalog />} />
           <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/login" element={<Login />} />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/cart"
             element={

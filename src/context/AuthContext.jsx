@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!user,
     login: authStore.login,
     logout: authStore.logout,
+    updateShippingAddress: authStore.updateShippingAddress,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

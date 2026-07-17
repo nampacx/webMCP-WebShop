@@ -11,6 +11,7 @@ import { authStore } from '../lib/authStore.js'
 import { subtotalOf, totalItemsOf, computeTotals } from '../lib/pricing.js'
 import { buildOrder } from '../lib/orders.js'
 import { finalizeCheckout } from '../lib/checkout.js'
+import { getOrderStatsFor } from '../lib/auditLog.js'
 
 const round = (n) => Math.round(n * 100) / 100
 
@@ -306,23 +307,84 @@ export function createShopTools({ onCheckout } = {}) {
     },
 
     {
-      name: 'shop_checkout',
+      name: 'shop_get_user_profile',
       description:
-        'Place the order for the current cart. Requires being signed in (call shop_sign_in first) and a non-empty cart. Provide a shipping address. A confirmation email is sent to the signed-in user. This is a demo — no real payment is taken and no real email is delivered; card details are optional and default to a demo card. Returns the order confirmation.',
+        "Get the signed-in user's profile facts: name, email, phone, member since, loyalty tier and points, saved shipping address, preferences, and order stats (orders placed / total spent). Requires sign-in.",
+      inputSchema: { type: 'object', properties: {} },
+      execute() {
+        const user = authStore.getUser()
+        if (!user) return fail('Not signed in. Call shop_sign_in first.')
+
+        const orderStats = getOrderStatsFor(user.email)
+        const a = user.shippingAddress
+        return ok(
+          { ...user, orderStats },
+          `${user.name} (${user.email}) — ${user.loyaltyTier} tier, ${user.loyaltyPoints} points, member since ${user.memberSince}. Ships to ${a.address}, ${a.city} ${a.zip}, ${a.country}. ${orderStats.count} order(s), $${orderStats.totalSpent} spent.`
+        )
+      },
+    },
+
+    {
+      name: 'shop_update_shipping_address',
+      description:
+        "Update the signed-in user's saved shipping address, which is used to prefill checkout. Provide only the fields to change — omitted fields keep their current value. Requires sign-in.",
       inputSchema: {
         type: 'object',
         properties: {
-          fullName: { type: 'string', description: 'Recipient name (defaults to the signed-in user).' },
+          name: { type: 'string', description: 'Recipient name.' },
           address: { type: 'string', description: 'Street address.' },
           city: { type: 'string' },
           zip: { type: 'string', description: 'ZIP / postal code.' },
-          country: { type: 'string', description: 'Defaults to "United States".' },
+          country: { type: 'string' },
+        },
+      },
+      execute(patch) {
+        const user = authStore.getUser()
+        if (!user) return fail('Not signed in. Call shop_sign_in first.')
+
+        const fields = ['name', 'address', 'city', 'zip', 'country']
+        const clean = {}
+        for (const field of fields) {
+          if (patch?.[field] === undefined) continue
+          const value = String(patch[field]).trim()
+          if (!value) return fail(`"${field}" cannot be empty.`)
+          clean[field] = value
+        }
+        if (Object.keys(clean).length === 0) {
+          return fail(`Provide at least one field to update: ${fields.join(', ')}.`)
+        }
+
+        const result = authStore.updateShippingAddress(clean)
+        if (!result.ok) return fail(result.error)
+
+        const a = result.shippingAddress
+        return ok(
+          { shippingAddress: a, updated: Object.keys(clean) },
+          `Shipping address updated (${Object.keys(clean).join(', ')}). Now ships to ${a.name}, ${a.address}, ${a.city} ${a.zip}, ${a.country}.`
+        )
+      },
+    },
+
+    {
+      name: 'shop_checkout',
+      description:
+        "Place the order for the current cart. Requires being signed in (call shop_sign_in first) and a non-empty cart. Shipping address fields are optional and fall back to the user's saved shipping address (see shop_get_user_profile); pass them only to ship somewhere else. A confirmation email is sent to the signed-in user. This is a demo — no real payment is taken and no real email is delivered; card details are optional and default to a demo card. Returns the order confirmation.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          fullName: {
+            type: 'string',
+            description: "Recipient name. Defaults to the saved address's recipient.",
+          },
+          address: { type: 'string', description: 'Street address. Defaults to the saved address.' },
+          city: { type: 'string', description: 'Defaults to the saved address.' },
+          zip: { type: 'string', description: 'ZIP / postal code. Defaults to the saved address.' },
+          country: { type: 'string', description: 'Defaults to the saved address.' },
           cardNumber: {
             type: 'string',
             description: 'Demo only — optional. Defaults to a demo card. Do not use real card numbers.',
           },
         },
-        required: ['address', 'city', 'zip'],
       },
       async execute({ fullName, address, city, zip, country, cardNumber }) {
         const user = authStore.getUser()
@@ -331,15 +393,25 @@ export function createShopTools({ onCheckout } = {}) {
         const items = cartStore.getItems()
         if (items.length === 0) return fail('Cart is empty. Add items before checking out.')
 
+        // Fall back to the user's saved shipping address for anything not given.
+        const saved = user.shippingAddress || {}
+        const shipTo = {
+          name: fullName || saved.name || user.name,
+          address: address || saved.address,
+          city: city || saved.city,
+          zip: zip || saved.zip,
+          country: country || saved.country || 'United States',
+        }
+        const missing = ['address', 'city', 'zip'].filter((f) => !shipTo[f])
+        if (missing.length) {
+          return fail(
+            `Missing shipping ${missing.join(', ')}. Pass them, or save an address first with shop_update_shipping_address.`
+          )
+        }
+
         const order = buildOrder({
           items,
-          shipTo: {
-            name: fullName || user.name,
-            address,
-            city,
-            zip,
-            country: country || 'United States',
-          },
+          shipTo,
           cardNumber: cardNumber || '4111111111111111',
         })
 

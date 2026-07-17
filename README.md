@@ -8,6 +8,7 @@ Everything (catalog, users, cart, checkout) runs client-side with static dummy d
 - **Catalog with search** — browse 17 detailed dummy products, search across every field, filter by category, and sort by price, rating, recency or review count.
 - **Product detail pages** (`/product/:id`) — long description, highlights, full technical specs, available sizes and colourways, tags, SKU, warranty and release year.
 - **Dummy sign-in** — sign in with a demo account (no real auth). Session persists in `localStorage`.
+- **User profile page** (`/profile`) — account facts at a glance (member since, phone, loyalty tier and points, orders placed, total spent, items in cart), an editable shipping address, preferences, and recent orders. Reachable from the "Hi, …" link in the navbar.
 - **Shopping cart** — add items, change quantities, remove items. Cart persists in `localStorage`. Cart & checkout require sign-in.
 - **Checkout** — shipping + payment form with validation (demo only, no real payment).
 - **Order confirmation** — an order summary with a generated order number.
@@ -46,6 +47,8 @@ Two global surfaces are installed:
 | `shop_remove_from_cart` | Remove an item |
 | `shop_sign_in` | Sign in with a demo account (required before checkout) |
 | `shop_get_auth_status` | Report whether a user is signed in |
+| `shop_get_user_profile` | The signed-in user's facts: contact, membership, loyalty, saved address, preferences, order stats |
+| `shop_update_shipping_address` | Update the saved shipping address (partial updates supported) |
 | `shop_checkout` | Place the order (requires sign-in + non-empty cart) |
 
 Each tool returns an MCP-style result: `{ content: [{ type: 'text', text }], structuredContent }`.
@@ -75,6 +78,23 @@ await window.webmcp.callTool('shop_search_products', { query: 'downhill mtb helm
 await window.webmcp.callTool('shop_search_products', { category: 'Cycling', onSaleOnly: true, sort: 'price-desc' })
 await window.webmcp.callTool('shop_get_product', { productId: 'CS-CYC-003' })  // full specs
 ```
+
+#### User profile
+
+`shop_get_user_profile` returns the signed-in user's facts (the password is never exposed).
+`shop_update_shipping_address` accepts a **partial** address — omitted fields keep their
+current value — and the saved address is used to prefill the checkout form and to fill in
+anything `shop_checkout` isn't given:
+
+```js
+await window.webmcp.callTool('shop_get_user_profile', {})
+await window.webmcp.callTool('shop_update_shipping_address', { city: 'Denver', zip: '80202' })
+await window.webmcp.callTool('shop_checkout', {})   // ships to the saved address
+```
+
+Profile edits persist per user under `contoso.profiles`, so they survive sign-out. The
+profile page and the tools share one store — an edit from either side shows up on the other
+immediately.
 
 ### Try it
 
@@ -216,7 +236,7 @@ src/
                   auditLog        (persistent WebMCP tool-usage audit trail)
                   checkout.js     (post-checkout effects: audit + send email)
                   email/          (demo email service, see above)
-  pages/          Catalog, ProductDetail, Login, CartPage, Checkout,
+  pages/          Catalog, ProductDetail, Login, Profile, CartPage, Checkout,
                   OrderConfirmation
   webmcp/         runtime.js      (navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)

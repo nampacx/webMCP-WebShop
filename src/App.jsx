@@ -7,6 +7,7 @@ import Profile from './pages/Profile.jsx'
 import CartPage from './pages/CartPage.jsx'
 import Checkout from './pages/Checkout.jsx'
 import OrderConfirmation from './pages/OrderConfirmation.jsx'
+import Tutorial from './pages/Tutorial.jsx'
 import WebMCPProvider from './webmcp/WebMCPProvider.jsx'
 import { useAuth } from './context/AuthContext.jsx'
 
@@ -61,6 +62,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/tutorial" element={<Tutorial />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

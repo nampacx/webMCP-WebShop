@@ -34,14 +34,13 @@ localStorage keys: `contoso.cart.items`, `contoso.auth.user` (stores only the us
 Both checkout routes — the UI form (`src/pages/Checkout.jsx`) and the `shop_checkout` tool — must run the same post-checkout side effects. They both call `finalizeCheckout()` in `src/lib/checkout.js` (audit entry + fire-and-forget confirmation email) so the two paths can't drift. Keep it that way: put any new post-order effect there, not in one caller.
 
 ### Dev-only file sinks (the only "backend")
-The browser can't write files, so `vite.config.js` registers two dev-server middlewares that exist **only under `npm run dev`**:
-- `auditLogFilePlugin` — `POST /__audit/log` appends each audit entry to `audit-log.jsonl` in the repo root. Browser side: `src/lib/fileSink.js` (guarded by `import.meta.env.DEV`).
+The browser can't write files, so `vite.config.js` registers a dev-server middleware that exists **only under `npm run dev`**:
 - `devEmailPlugin` — `POST /__email/send` writes each message as a real RFC-822 `.eml` into `sent-emails/`.
 
-The production build has neither endpoint and stays a pure static frontend. When touching audit or email flows, remember the browser store is the real feature and the file write is a dev-only mirror — don't make app logic depend on the endpoint existing.
+The production build has no endpoint and stays a pure static frontend. When touching email flows, remember the browser store is the real feature and the file write is a dev-only mirror — don't make app logic depend on the endpoint existing.
 
 ### Audit log & email
-- `src/lib/auditLog.js` — capped (500-entry) ring buffer in `localStorage`; redacts passwords/CVC/card numbers before storing. Exposed via `window.webmcp.getAuditLog() / exportAuditLog() / clearAuditLog()`.
+- `src/lib/auditLog.js` — capped (500-entry) ring buffer in `localStorage`; redacts passwords/CVC/card numbers before storing. Exposed via `window.webmcp.getAuditLog() / exportAuditLog() / clearAuditLog()`. Every tool call is also logged to the browser console via `console.info` / `console.warn`.
 - `src/lib/email/` — demo email service. `emailService.js` composes and dispatches through pluggable transports (`transports.js`: `mailbox`, `dev-file`, `console`); `templates.js` renders order confirmations; `mailboxStore.js` is the in-app preview inbox. Register a real provider via `setTransports([...])`.
 
 ## Conventions

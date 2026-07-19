@@ -277,8 +277,11 @@ await webmcp.callTool('shop_checkout', {})`}</code></pre>
         <h2>Audit & observability</h2>
         <p>
           The runtime records every tool invocation in a capped ring buffer stored in
-          localStorage. You can inspect and manage it:
+          localStorage. Every call is also logged to the browser DevTools console with the
+          tool name, status, duration, and arguments -- open the console to watch calls
+          in real time.
         </p>
+        <p>You can also query the audit log programmatically:</p>
         <pre className="tutorial-code"><code>{`// View all audit entries
 webmcp.getAuditLog()
 
@@ -287,10 +290,6 @@ webmcp.exportAuditLog()
 
 // Clear the log
 webmcp.clearAuditLog()`}</code></pre>
-        <p>
-          In development mode (<code>npm run dev</code>), audit entries are also written
-          to <code>audit-log.jsonl</code> in the repo root.
-        </p>
       </section>
 
       <section className="tutorial-section">

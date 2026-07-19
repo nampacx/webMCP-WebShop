@@ -26,6 +26,9 @@ export default function Navbar() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
             Catalog
           </NavLink>
+          <NavLink to="/tutorial" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Tutorial
+          </NavLink>
           <NavLink to="/cart" className={({ isActive }) => (isActive ? 'active' : '')}>
             <span className="cart-link">
               Cart

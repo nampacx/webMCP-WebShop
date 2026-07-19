@@ -85,18 +85,30 @@ class WebModelContext {
     }
   }
 
-  // Record a single tool call to the audit log with redacted arguments.
+  // Record a single tool call to the audit log and console.
   #audit(name, args, result, started) {
     try {
+      const durationMs = Math.round(now() - started)
+      const status = result?.isError ? 'error' : 'ok'
+      const summary = result?.content?.[0]?.text ?? ''
+      const safe = redactArgs(args)
+
       auditLog.log({
         type: 'tool_call',
         session: this.sessionId,
         tool: name,
-        args: redactArgs(args),
-        status: result?.isError ? 'error' : 'ok',
-        durationMs: Math.round(now() - started),
-        summary: result?.content?.[0]?.text ?? '',
+        args: safe,
+        status,
+        durationMs,
+        summary,
       })
+
+      const label = `[webmcp] ${name} (${status}, ${durationMs}ms)`
+      if (result?.isError) {
+        console.warn(label, { args: safe, error: summary })
+      } else {
+        console.info(label, { args: safe, result: result?.structuredContent })
+      }
     } catch {
       /* auditing must never break a tool call */
     }

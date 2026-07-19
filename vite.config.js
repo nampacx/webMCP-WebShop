@@ -100,6 +100,7 @@ function devEmailPlugin() {
 }
 
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS ? '/webMCP-WebShop/' : '/',
   plugins: [react(), auditLogFilePlugin(), devEmailPlugin()],
   server: {
     port: 5173,

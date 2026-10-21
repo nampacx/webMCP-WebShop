@@ -114,7 +114,7 @@ class WebModelContext {
     }
   }
 
-  // Notified when the tool set changes (used by the demo Agent Console UI).
+  // Notified when the tool set changes.
   subscribe(listener) {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)

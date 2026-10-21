@@ -19,6 +19,79 @@ Manage your expectations accordingly.
 > intentionally so. Please direct blame for any questionable abstraction at the language
 > model, not the human who pressed enter.
 
+## 💡 What is WebMCP?
+
+Normally an AI agent that wants to use a website has to *look* at it: scrape the DOM, guess which
+button is "Add to cart", and hope the layout doesn't change. **WebMCP** flips that. The page
+publishes a list of **tools** — named functions with a description and a JSON Schema for their
+inputs — and the agent simply calls them.
+
+```js
+// Without WebMCP: find the button, click it, hope.
+document.querySelector('.product-card button.add')?.click()
+
+// With WebMCP: ask the page what it can do, then call it.
+navigator.modelContext.listTools()                       // → [{ name, description, inputSchema }, …]
+await navigator.modelContext.callTool('shop_add_to_cart', { productId: 'run-001' })
+```
+
+The site stays in control: it decides which capabilities to expose, validates the input, and
+runs them against the same state the UI uses.
+
+> **Status:** WebMCP is an *experimental proposal* (see the
+> [WebMCP spec repo](https://github.com/webmachinelearning/webmcp)), not a shipped standard.
+> Browsers don't provide `navigator.modelContext` natively yet, so this repo ships a small
+> hand-written stand-in (`src/webmcp/runtime.js`) that installs the same-shaped API on the page.
+> The API surface may change as the proposal evolves.
+
+## ⚡ Quick start (60 seconds)
+
+```bash
+npm install
+npm run dev
+```
+
+1. Open the app and click **Tutorial** in the navbar (route: `/tutorial`) for a guided tour of
+   every tool.
+2. Open devtools and paste:
+   ```js
+   webmcp.listTools().map(t => t.name)                                  // what can the page do?
+   await webmcp.callTool('shop_search_products', { query: 'helmet' })   // do something
+   ```
+3. Watch the cart badge, pages and audit log react — the tools drive the real UI state.
+
+Note that the demo doesn't ship an LLM: *you* (or a script) play the agent from the console. To
+use a real model, point any WebMCP-capable agent or browser extension at the page; it will
+discover the same tools through `navigator.modelContext`.
+
+## 🧩 Add your own tool
+
+A tool is `{ name, description, inputSchema, execute(args) }`. `execute` returns an MCP-style
+result. The shop's tools live in `src/webmcp/tools.js` and are registered on mount by
+`WebMCPProvider.jsx`; you can also register one from the console to experiment:
+
+```js
+const unregister = navigator.modelContext.registerTool({
+  name: 'shop_say_hello',
+  description: 'Greet the shopper by name.',
+  inputSchema: {
+    type: 'object',
+    properties: { name: { type: 'string' } },
+    required: ['name'],
+  },
+  async execute({ name }) {
+    return { content: [{ type: 'text', text: `Hello, ${name}!` }], structuredContent: { name } }
+  },
+})
+
+await webmcp.callTool('shop_say_hello', { name: 'Ada' })
+unregister()
+```
+
+Tools that change app state should mutate the stores in `src/lib/` (not React state) — see the
+note on external stores at the bottom. Every call, including your custom tools, is audited
+automatically.
+
 ## 📦 What's in the box
 
 - **Catalog with search** — 17 suspiciously detailed dummy products. Search across every
@@ -162,21 +235,6 @@ window.webmcp.exportAuditLog()   // pretty-printed JSON string
 window.webmcp.clearAuditLog()    // wipe the trail
 ```
 
-#### 💾 Logging to a file (`audit-log.jsonl`)
-
-A browser tab can't write to disk (probably for the best), so under **`npm run dev`** each new
-audit entry is also streamed to the dev server and appended to **`audit-log.jsonl`** in the repo
-root — one JSON object per line. This is handled by dev-server middleware (`auditLogFilePlugin`
-in `vite.config.js`) that exists **only during development**, so the production build
-(`npm run build`) stays a pure static frontend with no backend to speak of. The file is
-git-ignored (it's runtime data, not source).
-
-```
-$ cat audit-log.jsonl
-{"id":"…","ts":"…","type":"tool_call","tool":"shop_search_products","args":{…},"status":"ok",…}
-{"id":"…","ts":"…","type":"checkout","source":"webmcp","orderId":"CS-…","total":193.32,…}
-```
-
 ## 📧 Email service (order confirmation)
 
 After a successful checkout — from **either** the checkout form or the WebMCP `shop_checkout`
@@ -230,7 +288,7 @@ npm run dev
 ```
 
 Then open the URL Vite prints (default http://localhost:5173). It auto-opens; the file-writing
-dev middleware (audit log + `.eml` files) comes along for the ride under `dev`.
+dev middleware (the `.eml` email sink) comes along for the ride under `dev`.
 
 ## 🏗️ Build
 
@@ -239,7 +297,7 @@ npm run build
 npm run preview
 ```
 
-The production build is a plain static bundle — no audit endpoint, no email endpoint, just the
+The production build is a plain static bundle — no email endpoint, just the
 frontend and the in-browser WebMCP layer.
 
 ## 🛠️ Tech
@@ -262,9 +320,10 @@ src/
                   checkout.js     (post-checkout effects: audit + send email)
                   email/          (demo email service, see above)
   pages/          Catalog, ProductDetail, Login, Profile, CartPage, Checkout,
-                  OrderConfirmation
+                  OrderConfirmation, Tutorial (the in-app /tutorial walkthrough)
   webmcp/         runtime.js      (navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)
+                  toolHelpers.js  (ok()/fail() result builders)
                   WebMCPProvider  (registers tools; wires checkout navigation)
   styles/         index.css
   App.jsx         routes + protected routes

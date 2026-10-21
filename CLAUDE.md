@@ -28,7 +28,6 @@ localStorage keys: `contoso.cart.items`, `contoso.auth.user` (stores only the us
 - `runtime.js` — the registry. Instantiates `WebModelContext` and installs it on `window.navigator.modelContext` and a convenience `window.webmcp`. **Every `callTool` is audited here** (see below), so instrumentation is caller-agnostic. Tools are `{ name, description, inputSchema, execute(args) }`; calls always resolve to an MCP-style result `{ content: [{type:'text', text}], structuredContent }` — handled errors return `{ ..., isError: true }` rather than throwing.
 - `tools.js` — `createShopTools({ onCheckout })` returns the shop's tool definitions (`shop_search_products`, `shop_add_to_cart`, `shop_checkout`, etc.). These call into `src/lib/` (search, pricing, orders, cartStore, authStore), never into React.
 - `WebMCPProvider.jsx` — registers the tools on mount. Lives **inside** the Router so the `shop_checkout` tool can navigate the UI to `/order-confirmation`.
-- `AgentConsole.jsx` — the "🤖 Agent" panel (demo harness + audit-log UI).
 
 ### Shared checkout path
 Both checkout routes — the UI form (`src/pages/Checkout.jsx`) and the `shop_checkout` tool — must run the same post-checkout side effects. They both call `finalizeCheckout()` in `src/lib/checkout.js` (audit entry + fire-and-forget confirmation email) so the two paths can't drift. Keep it that way: put any new post-order effect there, not in one caller.

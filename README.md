@@ -1,7 +1,7 @@
 # 🏀 Contoso Sports — a WebMCP playground wearing a webshop costume
 
 Let's be honest about what this is. The **actual point** of this repo is to poke at
-**WebMCP** — the proposed `navigator.modelContext` API that lets a web page hand its
+**WebMCP** — the proposed `modelContext` API (`document.modelContext` in the current draft) that lets a web page hand its
 own capabilities to an agent — and see how it feels to build with. You need *something*
 for the agent to do, though, and "TODO app #40,000" felt bleak. A sports webshop, on the
 other hand, has a catalog, a cart, sign-in, checkout, a profile, order emails… lots of
@@ -31,8 +31,9 @@ inputs — and the agent simply calls them.
 document.querySelector('.product-card button.add')?.click()
 
 // With WebMCP: ask the page what it can do, then call it.
-navigator.modelContext.listTools()                       // → [{ name, description, inputSchema }, …]
-await navigator.modelContext.callTool('shop_add_to_cart', { productId: 'run-001' })
+const tools = await document.modelContext.getTools()      // → [{ name, description, inputSchema, origin, … }, …]
+const add = tools.find(t => t.name === 'shop_add_to_cart')
+await document.modelContext.executeTool(add, { productId: 'run-001' })
 ```
 
 The site stays in control: it decides which capabilities to expose, validates the input, and
@@ -40,9 +41,10 @@ runs them against the same state the UI uses.
 
 > **Status:** WebMCP is an *experimental proposal* (see the
 > [WebMCP spec repo](https://github.com/webmachinelearning/webmcp)), not a shipped standard.
-> Browsers don't provide `navigator.modelContext` natively yet, so this repo ships a small
-> hand-written stand-in (`src/webmcp/runtime.js`) that installs the same-shaped API on the page.
-> The API surface may change as the proposal evolves.
+> Browsers don't provide `modelContext` natively yet (outside experimental builds), so this repo
+> ships a small hand-written stand-in (`src/webmcp/runtime.js`) that installs a same-shaped API on
+> the page. The API surface may change as the proposal evolves — see
+> [Spec drift](#-spec-drift-what-this-demo-does-and-doesnt-match) below.
 
 ## ⚡ Quick start (60 seconds)
 
@@ -62,16 +64,18 @@ npm run dev
 
 Note that the demo doesn't ship an LLM: *you* (or a script) play the agent from the console. To
 use a real model, point any WebMCP-capable agent or browser extension at the page; it will
-discover the same tools through `navigator.modelContext`.
+discover the same tools through `document.modelContext` (also reachable as `navigator.modelContext`).
 
 ## 🧩 Add your own tool
 
 A tool is `{ name, description, inputSchema, execute(args) }`. `execute` returns an MCP-style
 result. The shop's tools live in `src/webmcp/tools.js` and are registered on mount by
-`WebMCPProvider.jsx`; you can also register one from the console to experiment:
+`WebMCPProvider.jsx`; you can also register one from the console to experiment. Registration
+follows the spec draft: it returns a promise, and aborting the `signal` you pass unregisters the tool.
 
 ```js
-const unregister = navigator.modelContext.registerTool({
+const controller = new AbortController()
+await document.modelContext.registerTool({
   name: 'shop_say_hello',
   description: 'Greet the shopper by name.',
   inputSchema: {
@@ -82,10 +86,10 @@ const unregister = navigator.modelContext.registerTool({
   async execute({ name }) {
     return { content: [{ type: 'text', text: `Hello, ${name}!` }], structuredContent: { name } }
   },
-})
+}, { signal: controller.signal })
 
 await webmcp.callTool('shop_say_hello', { name: 'Ada' })
-unregister()
+controller.abort()   // unregisters the tool
 ```
 
 Tools that change app state should mutate the stores in `src/lib/` (not React state) — see the
@@ -121,15 +125,18 @@ Or just click one on the sign-in screen. We're not going to make you type it.
 ## 🎯 The actual point: WebMCP — agent tools
 
 The app exposes its capabilities to an in-browser agent via a **WebMCP** layer, following
-the shape of the proposed `navigator.modelContext` API. Tools register themselves on the
+the shape of the proposed `modelContext` API. Tools register themselves on the
 page and operate on the **same state the UI uses**, so when an agent does something, the
 interface just… updates. Cart badge ticks up, pages navigate, etc. No mirror world, no
 duplicated state to drift out of sync.
 
 Two global surfaces get installed on the page:
 
-- `window.navigator.modelContext` — `registerTool`, `listTools()`, `callTool(name, args)`
-- `window.webmcp` — a friendlier wrapper: `listTools()`, `callTool(name, args)`, `subscribe(fn)`
+- `document.modelContext` (also aliased as `navigator.modelContext`) — spec-shaped:
+  `registerTool(tool, { signal })`, `getTools()`, `executeTool(tool, args, { signal })`, and a
+  `toolchange` event
+- `window.webmcp` — a demo-only convenience wrapper: synchronous `listTools()`,
+  `callTool(name, args)`, `subscribe(fn)`, plus the audit-log helpers
 
 ### 🧰 Available tools
 
@@ -280,6 +287,26 @@ src/lib/email/
   mailboxStore.js  in-app mailbox for previewing sent messages
 ```
 
+## 🔀 Spec drift: what this demo does and doesn't match
+
+WebMCP is a moving draft ([spec repo](https://github.com/webmachinelearning/webmcp)). This table
+compares the current draft with this demo's runtime, so you know which parts to copy and which
+are demo-only. It was checked against the draft in 2026; re-check before relying on it.
+
+| Area | Spec draft | This demo |
+| --- | --- | --- |
+| Entry point | `document.modelContext` | Both `document.modelContext` and `navigator.modelContext` (earlier location) |
+| Register | `registerTool(tool, { signal, exposedTo })` → promise | Same. `exposedTo` is accepted but ignored (no cross-origin frames) |
+| Unregister | Abort the registration `signal` | Same |
+| Discover | `getTools({ fromOrigins })` → promise | `getTools()` (same-origin only) |
+| Run | `executeTool(tool, args, { signal })` | Same. Also `callTool(name, args)` by name |
+| Change event | `toolchange` | Same |
+| `execute` | `execute(args, { signal })` | Same |
+| Result shape | Not formally defined; examples vary | Always `{ content, structuredContent, isError }` |
+| `provideContext()` | Removed from the draft | Never implemented |
+| `window.webmcp`, sync `listTools()` | Not in the spec | Demo-only conveniences |
+| Declarative (`<form>`) API | Being explored | Not implemented |
+
 ## 🚀 Getting started
 
 ```bash
@@ -321,7 +348,7 @@ src/
                   email/          (demo email service, see above)
   pages/          Catalog, ProductDetail, Login, Profile, CartPage, Checkout,
                   OrderConfirmation, Tutorial (the in-app /tutorial walkthrough)
-  webmcp/         runtime.js      (navigator.modelContext registry)
+  webmcp/         runtime.js      (document/navigator.modelContext registry)
                   tools.js        (the shop's WebMCP tool definitions)
                   toolHelpers.js  (ok()/fail() result builders)
                   WebMCPProvider  (registers tools; wires checkout navigation)

@@ -15,7 +15,7 @@ There is no test runner, linter, or typechecker configured — `dev`, `build`, `
 
 ## What this is
 
-A **client-side-only** React demo webshop (Contoso Sports). No backend, no real auth, no real payments or email. All state (catalog, users, cart, profiles) is static dummy data in `src/data/` plus `localStorage`. The point of the project is the **WebMCP layer**: the app exposes its own capabilities as agent-callable tools following the proposed `navigator.modelContext` API.
+A **client-side-only** React demo webshop (Contoso Sports). No backend, no real auth, no real payments or email. All state (catalog, users, cart, profiles) is static dummy data in `src/data/` plus `localStorage`. The point of the project is the **WebMCP layer**: the app exposes its own capabilities as agent-callable tools following the proposed `modelContext` API (spec draft: `document.modelContext`; `navigator.modelContext` is kept as an alias).
 
 ## Architecture
 
@@ -25,7 +25,7 @@ A **client-side-only** React demo webshop (Contoso Sports). No backend, no real 
 localStorage keys: `contoso.cart.items`, `contoso.auth.user` (stores only the user id — the profile is re-derived from `src/data/users.js` on load), `contoso.profiles` (per-user edits like shipping address, kept separately so they survive sign-out).
 
 ### WebMCP layer (`src/webmcp/`)
-- `runtime.js` — the registry. Instantiates `WebModelContext` and installs it on `window.navigator.modelContext` and a convenience `window.webmcp`. **Every `callTool` is audited here** (see below), so instrumentation is caller-agnostic. Tools are `{ name, description, inputSchema, execute(args) }`; calls always resolve to an MCP-style result `{ content: [{type:'text', text}], structuredContent }` — handled errors return `{ ..., isError: true }` rather than throwing.
+- `runtime.js` — the registry. Instantiates `WebModelContext` and installs it on `document.modelContext`, `navigator.modelContext` and a demo-only convenience `window.webmcp`. Spec-shaped methods: `registerTool(tool, { signal })` (async; abort the signal to unregister), `getTools()`, `executeTool()`, `toolchange` event; the sync `listTools/callTool/subscribe` remain for the UI. README "Spec drift" tracks differences from the draft. **Every `callTool` is audited here** (see below), so instrumentation is caller-agnostic. Tools are `{ name, description, inputSchema, execute(args, { signal }) }`; calls always resolve to an MCP-style result `{ content: [{type:'text', text}], structuredContent }` — handled errors return `{ ..., isError: true }` rather than throwing.
 - `tools.js` — `createShopTools({ onCheckout })` returns the shop's tool definitions (`shop_search_products`, `shop_add_to_cart`, `shop_checkout`, etc.). These call into `src/lib/` (search, pricing, orders, cartStore, authStore), never into React.
 - `WebMCPProvider.jsx` — registers the tools on mount. Lives **inside** the Router so the `shop_checkout` tool can navigate the UI to `/order-confirmation`.
 

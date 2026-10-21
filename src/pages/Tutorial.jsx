@@ -168,8 +168,13 @@ export default function Tutorial() {
           well-documented functions -- just like calling an API.
         </p>
         <p>
+          WebMCP is an experimental, evolving proposal. Browsers don&apos;t ship it natively
+          yet, so this app includes a small stand-in runtime that follows the current draft.
+        </p>
+        <p>
           This demo shop registers its tools on{' '}
-          <code>navigator.modelContext</code> (and the convenience wrapper{' '}
+          <code>document.modelContext</code> (also aliased as{' '}
+          <code>navigator.modelContext</code>, plus the demo-only convenience wrapper{' '}
           <code>window.webmcp</code>) so any in-browser agent can search products, manage
           a cart, sign in, and complete a checkout -- all programmatically.
         </p>
@@ -224,7 +229,8 @@ await webmcp.callTool('shop_checkout', {})`}</code></pre>
             <p>
               <code>src/webmcp/runtime.js</code> creates a <code>WebModelContext</code> instance
               that acts as the tool registry. It is installed on{' '}
-              <code>navigator.modelContext</code> and <code>window.webmcp</code>.
+              <code>document.modelContext</code>, <code>navigator.modelContext</code> and{' '}
+              <code>window.webmcp</code>.
             </p>
           </div>
           <div className="tutorial-arch-arrow">→</div>

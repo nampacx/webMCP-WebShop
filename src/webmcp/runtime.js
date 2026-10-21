@@ -4,9 +4,15 @@
 // following the shape of the proposed `navigator.modelContext` WebMCP API.
 // Tools are registered by the page (see WebMCPProvider) and invoked by an agent.
 //
-// Two surfaces are installed on `window`:
-//   * window.navigator.modelContext  — the proposed standard surface
-//   * window.webmcp                   — a small convenience wrapper (listTools/callTool)
+// Surfaces installed on the page:
+//   * document.modelContext          — where the current spec draft puts the API
+//   * window.navigator.modelContext  — the earlier location, kept as an alias
+//   * window.webmcp                   — a small convenience wrapper (not part of the spec)
+//
+// Spec-shaped methods: registerTool(tool, { signal, exposedTo }) -> Promise,
+// getTools() -> Promise, executeTool(tool, args, { signal }) and a `toolchange`
+// event. The older synchronous listTools()/callTool()/subscribe() remain for the
+// demo UI and window.webmcp.
 //
 // Every tool call is recorded to the audit log (see src/lib/auditLog.js).
 
@@ -15,7 +21,7 @@ import { fail } from './toolHelpers.js'
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
-class WebModelContext {
+class WebModelContext extends EventTarget {
   #tools = new Map()
   #listeners = new Set()
   // Cached descriptor list. Regenerated only when the tool set changes so
@@ -26,6 +32,7 @@ class WebModelContext {
   sessionId = Math.random().toString(36).slice(2, 10)
 
   constructor() {
+    super()
     // Bind public methods so they keep working when destructured, e.g.
     // `const { callTool } = navigator.modelContext`.
     this.registerTool = this.registerTool.bind(this)
@@ -33,11 +40,12 @@ class WebModelContext {
     this.listTools = this.listTools.bind(this)
     this.callTool = this.callTool.bind(this)
     this.subscribe = this.subscribe.bind(this)
+    this.getTools = this.getTools.bind(this)
+    this.executeTool = this.executeTool.bind(this)
   }
 
-  // Register a tool: { name, description, inputSchema, execute(args) }.
-  // Returns an unregister function.
-  registerTool(tool) {
+  // Add a tool synchronously; returns an unregister function.
+  #add(tool) {
     if (!tool || typeof tool.name !== 'string' || typeof tool.execute !== 'function') {
       throw new Error('registerTool requires { name, execute }')
     }
@@ -51,9 +59,26 @@ class WebModelContext {
     }
   }
 
+  // Spec-shaped registration: registerTool(tool, { signal }). Aborting the
+  // signal unregisters the tool. The tool is registered synchronously; the
+  // returned promise resolves once it is in place and rejects on invalid input.
+  // `exposedTo` is accepted but ignored: this demo has no cross-origin frames.
+  registerTool(tool, options = {}) {
+    try {
+      const { signal } = options || {}
+      if (signal?.aborted) return Promise.resolve()
+      const unregister = this.#add(tool)
+      signal?.addEventListener('abort', unregister, { once: true })
+      return Promise.resolve()
+    } catch (err) {
+      return Promise.reject(err)
+    }
+  }
+
   // Register several tools at once; returns a single unregister function.
+  // (Internal convenience used by WebMCPProvider; not part of the spec.)
   registerTools(tools) {
-    const unregs = tools.map((t) => this.registerTool(t))
+    const unregs = tools.map((t) => this.#add(t))
     return () => unregs.forEach((u) => u())
   }
 
@@ -63,19 +88,41 @@ class WebModelContext {
     return this.#snapshot
   }
 
+  // Spec-shaped discovery: resolves to tools with their origin and window.
+  // Only same-origin tools exist here, so `fromOrigins` has no effect.
+  async getTools() {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return this.#snapshot.map((t) => ({
+      ...t,
+      origin,
+      window: typeof window !== 'undefined' ? window : null,
+    }))
+  }
+
+  // Spec-shaped execution of a tool returned by getTools().
+  async executeTool(tool, args = {}, options = {}) {
+    return this.callTool(tool?.name, args, options)
+  }
+
   // Invoke a tool. Always resolves to an MCP-style result object; handled
   // errors come back as { content, isError: true } rather than throwing.
   // Every invocation is recorded to the audit log.
-  async callTool(name, args = {}) {
+  async callTool(name, args = {}, options = {}) {
     const started = now()
     const tool = this.#tools.get(name)
+    const signal = options?.signal
     if (!tool) {
       const result = fail(`Unknown tool: ${name}`)
       this.#audit(name, args, result, started)
       return result
     }
+    if (signal?.aborted) {
+      const result = fail(`Call to ${name} was aborted`)
+      this.#audit(name, args, result, started)
+      return result
+    }
     try {
-      const result = await tool.execute(args || {})
+      const result = await tool.execute(args || {}, { signal })
       this.#audit(name, args, result, started)
       return result
     } catch (err) {
@@ -114,7 +161,7 @@ class WebModelContext {
     }
   }
 
-  // Notified when the tool set changes (used by the demo Agent Console UI).
+  // Notified when the tool set changes.
   subscribe(listener) {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
@@ -127,6 +174,7 @@ class WebModelContext {
       inputSchema,
     }))
     this.#listeners.forEach((l) => l())
+    this.dispatchEvent(new Event('toolchange'))
   }
 }
 
@@ -134,17 +182,17 @@ export const modelContext = new WebModelContext()
 
 // Install on the global surfaces so an in-browser agent can find the tools.
 if (typeof window !== 'undefined') {
-  try {
-    Object.defineProperty(window.navigator, 'modelContext', {
-      value: modelContext,
-      configurable: true,
-      writable: true,
-    })
-  } catch {
+  // `document.modelContext` is the spec draft's location; `navigator.modelContext`
+  // is the earlier one. Install on both, tolerating locked-down hosts.
+  for (const host of [window.document, window.navigator]) {
     try {
-      window.navigator.modelContext = modelContext
+      Object.defineProperty(host, 'modelContext', {
+        value: modelContext,
+        configurable: true,
+        writable: true,
+      })
     } catch {
-      /* navigator is locked down; window.webmcp below is still available */
+      /* host is locked down; window.webmcp below is still available */
     }
   }
 
